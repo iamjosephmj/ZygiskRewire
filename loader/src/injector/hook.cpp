@@ -205,10 +205,7 @@ struct FileDescriptorInfo {
 DCL_HOOK_FUNC(void, _ZNK18FileDescriptorInfo14ReopenOrDetachERKNSt3__18functionIFvNS0_12basic_stringIcNS0_11char_traitsIcEENS0_9allocatorIcEEEEEEE, void *_this, void *fail_fn) {
     const int fd = *(const int *)((uintptr_t)_this + offsetof(FileDescriptorInfo, fd));
     const std::string *file_path = (const std::string *)((uintptr_t)_this + offsetof(FileDescriptorInfo, file_path));
-    const int open_flags = *(const int *)((uintptr_t)_this + offsetof(FileDescriptorInfo, open_flags));
     const bool is_sock = *(const bool *)((uintptr_t)_this + offsetof(FileDescriptorInfo, is_sock));
-
-    int new_fd;
 
     if (is_sock)
         goto bypass_fd_check;
@@ -216,9 +213,7 @@ DCL_HOOK_FUNC(void, _ZNK18FileDescriptorInfo14ReopenOrDetachERKNSt3__18functionI
     if (strncmp(file_path->c_str(), "/memfd:/boot-image-methods.art", strlen("/memfd:/boot-image-methods.art")) == 0)
         goto bypass_fd_check;
 
-    new_fd = TEMP_FAILURE_RETRY(open(file_path->c_str(), open_flags));
-    close(new_fd);
-    if (new_fd == -1) {
+    if (access(file_path->c_str(), F_OK) == -1) {
         LOGD("Failed to open file %s, detaching it", file_path->c_str());
 
         close(fd);
