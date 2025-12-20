@@ -1,6 +1,6 @@
 # ReZygisk
 
-[印尼语](/READMEs/README_id-ID.md) | [越南语](/READMEs/README_vi-VN.md) | [巴西葡萄牙语](/READMEs/README_pt-BR.md) | [法语](/READMEs/README_fr-FR.md) | [日语](/READMEs/README_ja-JP.md) | [简体中文](/READMEs/README_zh_CN.md)
+[English](../README.md)
 
 ReZygisk 是 Zygisk Next 的一个分支，是 Zygisk 的独立实现，为 KernelSU、APatch 和 Magisk（官方版和 Kitsune 版）提供 Zygisk API 支持。
 
@@ -34,8 +34,8 @@ Zygisk Next 的开发者是 Android 社区中著名且值得信赖的，然而�
 
 选择正确的构建版本/zip 文件很重要，因为它将决定 ReZygisk 的隐藏性和稳定性。不过，这并不是一项艰巨的任务：
 
-*   `release` 版本应该是大多数情况下的选择，它移除了应用层级的日志记录，并提供更优化的二进制文件。
-*   `debug` 版本则相反，它包含大量日志记录且没有优化。因此，**你应仅在调试目的**以及**为创建 Issue 而获取日志时**使用它。
+- `release` 版本应该是大多数情况下的选择，它移除了应用层级的日志记录，并提供更优化的二进制文件。
+- `debug` 版本则相反，它包含大量日志记录且没有优化。因此，**你应仅在调试目的**以及**为创建 Issue 而获取日志时**使用它。
 
 至于分支，你应始终使用 `main` 分支，除非开发者另有说明，或者你想测试即将推出的功能并知晓其中涉及的风险。
 
@@ -56,17 +56,17 @@ Zygisk Next 的开发者是 Android 社区中著名且值得信赖的，然而�
 
 目前有两种不同的方式可以为 ReZygisk 贡献翻译：
 
-*   **README 的翻译**：你可以在 `READMEs` 文件夹中创建一个新文件，遵循命名约定 `README_<语言>.md`，其中 `<语言>` 是语言代码（例如，巴西葡萄牙语为 `README_pt-BR.md`），并向 `main` 分支提交一个包含你更改的 pull request。
-*   **ReZygisk WebUI 的翻译**：你应该首先贡献到我们的 [Crowdin](https://crowdin.com/project/rezygisk)。一旦获得批准，请从那里检索 `.json` 文件，并提交一个包含你更改的 pull request——将 `.json` 文件添加到 `webroot/lang` 文件夹，并将你的署名按字母顺序添加到 `TRANSLATOR.md` 文件中。
+- **README 的翻译**：你可以在 `READMEs` 文件夹中创建一个新文件，遵循命名约定 `README_<语言>.md`，其中 `<语言>` 是语言代码（例如，巴西葡萄牙语为 `README_pt-BR.md`），并向 `main` 分支提交一个包含你更改的 pull request。
+- **ReZygisk WebUI 的翻译**：你应该首先贡献到我们的 [Crowdin](https://crowdin.com/project/rezygisk)。一旦获得批准，请从那里检索 `.json` 文件，并提交一个包含你更改的 pull request——将 `.json` 文件添加到 `webroot/lang` 文件夹，并将你的署名按字母顺序添加到 `TRANSLATOR.md` 文件中。
 
 ## 支持
 
 对于任何与 ReZygisk 或其他 PerformanC 项目相关的问题，欢迎随时加入以下任一频道：
 
-*   Discord 频道: [PerformanC](https://discord.gg/uPveNfTuCJ)
-*   ReZygisk Telegram 频道: [@rezygisk](https://t.me/rezygisk)
-*   PerformanC Telegram 频道: [@performancorg](https://t.me/performancorg)
-*   PerformanC Signal 群组: [@performanc](https://signal.group/#CjQKID3SS8N5y4lXj3VjjGxVJnzNsTIuaYZjj3i8UhipAS0gEhAedxPjT5WjbOs6FUuXptcT)
+- Discord 频道: [PerformanC](https://discord.gg/uPveNfTuCJ)
+- ReZygisk Telegram 频道: [@rezygisk](https://t.me/rezygisk)
+- PerformanC Telegram 频道: [@performancorg](https://t.me/performancorg)
+- PerformanC Signal 群组: [@performanc](https://signal.group/#CjQKID3SS8N5y4lXj3VjjGxVJnzNsTIuaYZjj3i8UhipAS0gEhAedxPjT5WjbOs6FUuXptcT)
 
 ## 贡献
 
