@@ -37,7 +37,7 @@ export function setDark(chooseSet) {
 }
 
 function setData(mode) {
-  localStorage.getItem('/ReZygisk/theme', mode)
+  localStorage.setItem('/ReZygisk/theme', mode)
 
   return mode
 }

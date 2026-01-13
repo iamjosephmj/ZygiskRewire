@@ -28,7 +28,7 @@ function setSystemFont() {
 }
 
 function setData(mode) {
-  localStorage.getItem('/ReZygisk/font', mode)
+  localStorage.setItem('/ReZygisk/font', mode)
 
   return mode
 }

@@ -7,7 +7,7 @@ function setErrorData(errorLog) {
   const getPrevious = localStorage.getItem('/ReZygisk/error')
   const finalLog = getPrevious && getPrevious.length !== 0 ? getPrevious + `\n` + errorLog : errorLog
 
-  localStorage.getItem('/ReZygisk/error', finalLog)
+  localStorage.setItem('/ReZygisk/error', finalLog)
   return finalLog
 }
 

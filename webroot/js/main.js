@@ -10,7 +10,7 @@ export function setError(place, issue) {
 }
 
 export function setLangData(mode) {
-  localStorage.getItem('/ReZygisk/language', mode)
+  localStorage.setItem('/ReZygisk/language', mode)
 
   return localStorage.getItem('/ReZygisk/language')
 }
@@ -19,7 +19,7 @@ export function setErrorData(errorLog) {
   const getPrevious = localStorage.getItem('/ReZygisk/error')
   const finalLog = getPrevious && getPrevious.length !== 0 ? getPrevious + `\n` + errorLog : errorLog
 
-  localStorage.getItem('/ReZygisk/error', finalLog)
+  localStorage.setItem('/ReZygisk/error', finalLog)
 
   return finalLog
 }

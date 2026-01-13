@@ -2,7 +2,7 @@ const errorh_panel = document.getElementById('errorh_panel')
 let sys_error = localStorage.getItem('/ReZygisk/error')
 
 if (!sys_error) {
-  localStorage.getItem('/ReZygisk/error', '')
+  localStorage.setItem('/ReZygisk/error', '')
 
   sys_error = localStorage.getItem('/ReZygisk/error')
 }
