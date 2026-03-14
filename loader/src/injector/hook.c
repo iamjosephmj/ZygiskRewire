@@ -328,6 +328,19 @@ DCL_HOOK_FUNC(int, pthread_attr_setstacksize, void *target, size_t size) {
   if (should_unmap_zygisk) {
     unhook_functions();
 
+    if (!should_unmap_zygisk) {
+      LOGW("Failed to unmap libzygisk.so, skipping munmap");
+
+      enable_unloader = false;
+
+      free(zygisk_modules);
+      zygisk_modules = NULL;
+
+      lsplt_free_resources();
+
+      return res;
+    }
+
     /* INFO: Modules might use libzygisk.so after postAppSpecialize. We can only
                free it when we are really before our unmap. */
     free(zygisk_modules);
