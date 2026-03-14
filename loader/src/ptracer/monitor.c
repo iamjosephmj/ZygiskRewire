@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include <sys/mount.h>
 #include <fcntl.h>
+#include <string.h>
 
 #include <unistd.h>
 
@@ -25,6 +26,7 @@
 #define SOCKET_NAME "init_monitor"
 
 #define STOPPED_WITH(sig, event) WIFSTOPPED(sigchld_status) && (sigchld_status >> 8 == ((sig) | (event << 8)))
+
 
 static bool update_status(const char *message);
 
@@ -493,6 +495,7 @@ static bool ensure_daemon_created(bool is_64bit) {
 #define PRE_INJECT(abi, is_64)                                        \
   if (strcmp(program, "/system/bin/app_process" # abi) == 0) {        \
     tracer = "./bin/zygisk-ptrace" # abi;                             \
+    is_tango = false;                                                 \
                                                                       \
     if (should_stop_inject ## abi()) {                                \
       LOGW("Zygote" # abi " restart too much times, stop injecting"); \
@@ -513,6 +516,33 @@ static bool ensure_daemon_created(bool is_64bit) {
                                                                       \
       break;                                                          \
     }                                                                 \
+  }
+
+#define PRE_INJECT_TANGO                                           \
+  if ((strcmp(program, "/system_ext/bin/tango_translator") == 0 || \
+       strcmp(program, "/system/bin/tango_translator") == 0)) {    \
+    tracer = "./bin/zygisk-ptrace64";                              \
+    is_tango = true;                                               \
+                                                                   \
+    if (should_stop_inject32()) {                              \
+      LOGW("Tango restart too many times, stop injecting");        \
+                                                                   \
+      tracing_state = STOPPING;                                    \
+      strcpy(monitor_stop_reason, "Zygote crashed");               \
+      ptrace(PTRACE_INTERRUPT, 1, 0, 0);                           \
+                                                                   \
+      break;                                                       \
+    }                                                              \
+                                                                   \
+    if (!ensure_daemon_created(false)) {                           \
+      LOGW("ReZygiskd 32-bit not running, stop injecting");        \
+                                                                   \
+      tracing_state = STOPPING;                                    \
+      strcpy(monitor_stop_reason, "ReZygiskd not running");        \
+      ptrace(PTRACE_INTERRUPT, 1, 0, 0);                           \
+                                                                   \
+      break;                                                       \
+    }                                                              \
   }
 
 int sigchld_signal_fd;
@@ -662,7 +692,9 @@ void sigchld_listener_callback() {
           }
 
           LOGV("%d program %s", pid, program);
-          const char* tracer = NULL;
+
+          const char *tracer = NULL;
+          bool is_tango = false;
 
           do {
             if (tracing_state != TRACING) {
@@ -673,18 +705,35 @@ void sigchld_listener_callback() {
 
             PRE_INJECT(64, true)
             PRE_INJECT(32, false)
+            PRE_INJECT_TANGO
 
             if (tracer != NULL) {
-              LOGD("stopping %d", pid);
+              LOGI("handoff tracer: pid=%d program=%s tracer=%s tango=%s", pid, program, tracer, is_tango ? "yes" : "no");
 
-              kill(pid, SIGSTOP);
-              ptrace(PTRACE_CONT, pid, 0, 0);
-              waitpid(pid, &sigchld_status, __WALL);
+              if (is_tango) {
+                /* INFO: Stopping tango during init causes an unrecoverable SIGSEGV on resume. */
+                /* TODO: Can this be improved? Can we make an injection without time being a factor? */
+                LOGD("tango deferred: detaching %d without stop", pid);
 
-              if (STOPPED_WITH(SIGSTOP, 0)) {
+                ptrace(PTRACE_DETACH, pid, 0, 0);
+              } else {
+                LOGD("stopping %d", pid);
+
+                kill(pid, SIGSTOP);
+                ptrace(PTRACE_CONT, pid, 0, 0);
+                waitpid(pid, &sigchld_status, __WALL);
+
+                if (!STOPPED_WITH(SIGSTOP, 0)) {
+                  LOGW("handoff: pid %d did not stop as expected", pid);
+
+                  break;
+                }
+
                 LOGD("detaching %d", pid);
-
                 ptrace(PTRACE_DETACH, pid, 0, SIGSTOP);
+              }
+
+              {
                 sigchld_status = 0;
                 int p = fork_dont_care();
 
@@ -692,7 +741,13 @@ void sigchld_listener_callback() {
                   char pid_str[32];
                   sprintf(pid_str, "%d", pid);
 
-                  execl(tracer, basename(tracer), "trace", pid_str, "--restart", NULL);
+                  LOGI("exec tracer command: %s trace %s --restart%s", tracer, pid_str, is_tango ? " --tango" : "");
+
+                  if (is_tango) {
+                    execl(tracer, basename(tracer), "trace", pid_str, "--restart", "--tango", NULL);
+                  } else {
+                    execl(tracer, basename(tracer), "trace", pid_str, "--restart", NULL);
+                  }
 
                   PLOGE("failed to exec, kill");
 

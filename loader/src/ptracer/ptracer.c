@@ -3,20 +3,205 @@
 #include <inttypes.h>
 #include <string.h>
 #include <fcntl.h>
-
 #include <sys/ptrace.h>
 #include <sys/auxv.h>
-#include <elf.h>
+#include <sys/mman.h>
+#include <sys/socket.h>
 #include <link.h>
 #include <sys/wait.h>
 #include <signal.h>
 
+#include <elf.h>
 #include <unistd.h>
+#include <linux/un.h>
 
 #include "utils.h"
 #include "misc.h"
 
 #include "remote_csoloader.h"
+#include "remote_csoloader_arm32.h"
+
+#ifdef __aarch64__
+
+/* TODO: I can't express how many detections this likely will have, but
+           it is not of high priority. 32-bit apps are going to phase out
+           eventually. However, we should investigate possible detections,
+           especially when using mprotect to register memory pages. */
+static bool inject_tango(int pid, const char *lib_path, uint32_t libc_init_target, uint32_t libc_init_got_slot) {
+  struct user_regs_struct regs = { 0 };
+  if (!get_regs(pid, &regs)) {
+    PLOGE("Failed to get registers");
+
+    return false;
+  }
+
+  struct user_regs_struct backup;
+  memcpy(&backup, &regs, sizeof(regs));
+
+  char maps_path[64];
+  snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", pid);
+
+  struct maps *remote_map = parse_maps(maps_path);
+  if (!remote_map) {
+    LOGE("Failed to parse remote maps");
+
+    return false;
+  }
+
+  bool ok = false;
+  bool need_restore = true;
+
+  uint32_t lib_base = 0, lib_size = 0, lib_entry = 0;
+  if (!arm32_csoloader_load(pid, &regs, remote_map, lib_path, &lib_base, &lib_size, &lib_entry)) {
+    LOGE("Failed to load %s", lib_path);
+
+    goto tango_done;
+  }
+
+  LOGD("Mapped %s at 0x%x (size: 0x%x, entry=0x%x)", lib_path, lib_base, lib_size, lib_entry);
+
+  if (!lib_entry) {
+    LOGE("Failed to find 'entry' symbol in %s", lib_path);
+
+    goto tango_done;
+  }
+
+  /* INFO: Tango translator intercepts both BKPT and UDF in userspace, before it
+             can even raise SIGTRAP to the tracer. To bypass this, we use the
+             kill(getpid(), SIGTRAP) trick which goes through the kernel's normal
+             signal delivery path, allowing the tracer to catch it. */
+  uint32_t code[] = {
+    /* INFO: Call mprotect syscall to register the libzygisk.so memory pages */
+    0x4807B5FF, /* PUSH {r0-r7,lr} ; LDR r0,[PC,#28] → data[0]    */
+    0x22074907, /* LDR r1,[PC,#28] → data[1] ; MOVS r2,#7 (RWX)   */
+    0xDF00277D, /* MOVS r7,#125 (__NR_mprotect) ; SVC #0           */
+    /* INFO: Call the libzygisk.so entry function */
+    0x49054804, /* LDR r0,[PC,#16] → data[0] ; LDR r1,[PC,#20] → data[1] */
+    0x4B052201, /* MOVS r2,#1 (tango) ; LDR r3,[PC,#20] → data[2] */
+    /* INFO: Call kill(getpid(), SIGTRAP) to trigger SIGTRAP */
+    0x27144798, /* BLX r3 ; MOVS r7,#20 (__NR_getpid)              */
+    0x2105DF00, /* SVC #0 (getpid) ; MOVS r1,#5 (SIGTRAP)          */
+    0xDF002725, /* MOVS r7,#37 (__NR_kill) ; SVC #0                 */
+    /* INFO: Data for the code above (lib_base, lib_size, lib_entry) */
+    lib_base,
+    lib_size,
+    lib_entry | 1,
+    0,          /* INFO: Placeholder for the stub's later use */
+  };
+
+  uint32_t tramp = 0;
+  for (size_t i = 0; i < remote_map->size && !tramp; i++) {
+    const struct map *map = &remote_map->maps[i];
+    if (!map->path || !(map->perms & PROT_EXEC) || (uintptr_t)map->start >= 0x100000000ULL) continue;
+
+    tramp = find_tramp_padding(pid, (uint32_t)(uintptr_t)map->start, (uint32_t)(uintptr_t)map->end, sizeof(code));
+  }
+
+  if (!tramp) {
+    LOGE("Failed to find enough executable padding for trampoline (%zu bytes)", sizeof(code));
+
+    goto tango_done;
+  }
+
+  for (size_t i = 0; i < sizeof(code) / sizeof(code[0]); i++) {
+    if (ptrace_poke_u32(pid, (uintptr_t)(tramp + i * 4), code[i])) continue;
+
+    LOGE("Failed to write trampoline word %zu", i);
+
+    goto tango_done;
+  }
+
+  LOGD("GOT hook __libc_init in app_process32 (0x%x to trampoline 0x%x)", libc_init_target, tramp | 1);
+
+  uint32_t tramp_thumb = tramp | 1;
+  if (write_proc(pid, (uintptr_t)libc_init_got_slot, &tramp_thumb, 4) != 4 && !ptrace_poke_u32(pid, (uintptr_t)libc_init_got_slot, tramp_thumb)) {
+    LOGE("Failed to patch GOT entry at 0x%x with %d: %s", libc_init_got_slot, errno, strerror(errno));
+
+    goto tango_done;
+  }
+
+  (void)set_regs(pid, &backup);
+
+  need_restore = false;
+
+  if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
+    PLOGE("PTRACE_CONT for trampoline execution");
+
+    goto tango_done;
+  }
+
+  /* INFO: Wait for it to get to __libc_init, which then goes to its GOT which
+             then executes our trampoline. After executing our trampoline, it
+             executes libzygisk.so entry, and after that, we raise a SIGTRAP
+             event with kill(...), which here, we wait for it, to then do
+             the cleanup. */
+  while (1) {
+    int status;
+    wait_for_trace(pid, &status, __WALL);
+
+    if (!WIFSTOPPED(status)) {
+      LOGE("Process %d exited during trampoline (status 0x%x)", pid, status);
+
+      goto tango_done;
+    }
+
+    int sig   = WSTOPSIG(status);
+    int event = (status >> 16) & 0xFF;
+    /* INFO: Catch the SIGTRAP generated by the kill() call */
+    if (sig == SIGTRAP && event == 0)
+      break;
+
+    ptrace(PTRACE_CONT, pid, 0, event ? 0 : sig);
+  }
+
+  LOGD("Caught trampoline SIGTRAP");
+
+  /* INFO: Clean the trampoline after catching the SIGTRAP to avoid detections */
+  for (size_t i = 0; i < sizeof(code) / sizeof(code[0]); i++)
+    ptrace_poke_u32(pid, (uintptr_t)(tramp + i * 4), 0);
+
+  /* INFO: Also clean the GOT entry */
+  if (!ptrace_poke_u32(pid, (uintptr_t)libc_init_got_slot, libc_init_target))
+    LOGW("Failed to restore GOT at 0x%x", libc_init_got_slot);
+
+  LOGD("Restored __libc_init GOT entry and zeroed trampoline");
+
+  /* INFO: Tango translator maintains memory-side state that would go out of sync if we
+             rewind execution via set_regs, so instead we write a tiny tail-call stub
+             at the end of the trampoline's data that jumps forward into __libc_init. */
+  ptrace_poke_u32(pid, (uintptr_t)(tramp + 32), 0x40FFE8BD /* POP.W {r0-r7,lr}   */);
+  ptrace_poke_u32(pid, (uintptr_t)(tramp + 36), 0xC004F8DF /* LDR.W r12,[PC,#4]  */);
+  ptrace_poke_u32(pid, (uintptr_t)(tramp + 40), 0x00004760 /* BX r12 ; (padding) */);
+  ptrace_poke_u32(pid, (uintptr_t)(tramp + 44), libc_init_target);
+
+  if (ptrace(PTRACE_SYSCALL, pid, 0, 0) == -1) {
+    PLOGE("PTRACE_SYSCALL for tail-call stub");
+
+    ok = true;
+
+    goto tango_done;
+  }
+
+  if (!tango_step_to_syscall(pid)) {
+    LOGE("Process %d died waiting for post-stub syscall", pid);
+
+    goto tango_done;
+  }
+
+  /* Zero the stub */
+  for (size_t i = 0; i < 4; i++)
+    ptrace_poke_u32(pid, (uintptr_t)(tramp + 32 + i * 4), 0);
+
+  ok = true;
+
+  tango_done:
+    free_maps(remote_map);
+
+    if (need_restore) (void)set_regs(pid, &backup);
+
+    return ok;
+}
+#endif
 
 bool inject_on_main(int pid, const char *lib_path) {
   LOGI("injecting %s to zygote %d", lib_path, pid);
@@ -190,11 +375,12 @@ bool inject_on_main(int pid, const char *lib_path) {
     free_maps(local_map);
     free_maps(map);
 
-    long args[2];
+    long args[3];
     args[0] = (long)remote_base;
     args[1] = (long)remote_size;
+    args[2] = 0; /* INFO: tango_flag */
 
-    remote_call(pid, &regs, injector_entry, (uintptr_t)libc_return_addr, args, 2);
+    remote_call(pid, &regs, injector_entry, (uintptr_t)libc_return_addr, args, 3);
 
     /* INFO: remote_call uses a deliberate SIGSEGV on an invalid return address to regain control.
                If the call faults elsewhere (e.g., inside injector code), REG_IP won't match. */
@@ -252,20 +438,39 @@ bool inject_on_main(int pid, const char *lib_path) {
     return false;                             \
   }
 
-bool trace_zygote(int pid) {
+bool trace_zygote(int pid, bool tango_flag) {
   LOGI("start tracing %d (tracer %d)", pid, getpid());
 
   int status;
 
   struct kernel_version version = parse_kversion();
   if (version.major > 3 || (version.major == 3 && version.minor >= 8)) {
-    if (ptrace(PTRACE_SEIZE, pid, 0, PTRACE_O_EXITKILL | PTRACE_O_TRACESECCOMP) == -1) {
-      PLOGE("seize");
+    #ifdef __aarch64__
+      if (tango_flag) {
+        /* INFO: For tango injection, we need to seize with PTRACE_O_TRACESYSGOOD to
+                   reliably catch the translator's entry point. */
+         if (ptrace(PTRACE_SEIZE, pid, 0, PTRACE_O_EXITKILL | PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACESECCOMP) == -1) {
+          PLOGE("seize for tango");
 
-      return false;
-    }
+          return false;
+        }
+      } else {
+        if (ptrace(PTRACE_SEIZE, pid, 0, PTRACE_O_EXITKILL | PTRACE_O_TRACESECCOMP) == -1) {
+          PLOGE("seize");
 
-    WAIT_OR_DIE;
+          return false;
+        }
+
+        WAIT_OR_DIE;
+      }
+    #else
+      if (ptrace(PTRACE_SEIZE, pid, 0, PTRACE_O_EXITKILL | PTRACE_O_TRACESECCOMP) == -1) {
+        PLOGE("seize");
+        return false;
+      }
+
+      WAIT_OR_DIE;
+    #endif
   } else {
     if (ptrace(PTRACE_SEIZE, pid, 0, 0) == -1) {
       PLOGE("seize");
@@ -275,6 +480,62 @@ bool trace_zygote(int pid) {
 
     WAIT_OR_DIE;
   }
+
+  #ifdef __aarch64__
+    if (tango_flag) {
+      if (ptrace(PTRACE_INTERRUPT, pid, 0, 0) == -1) {
+        PLOGE("interrupt");
+
+        ptrace(PTRACE_DETACH, pid, 0, 0);
+
+        return false;
+      }
+
+      /* INFO: Drain to INTERRUPT's SIGTRAP + EVENT_STOP */
+      if (!tango_drain_to_event_stop(pid)) {
+        LOGE("Failed to drain to event stop for tango injection");
+
+        ptrace(PTRACE_DETACH, pid, 0, SIGCONT);
+
+        return false;
+      }
+
+      struct tango_linker_watch watch = { 0 };
+      if (!tango_wait_linker_ready(pid, &watch)) {
+        LOGE("Failed to wait for linker ready for injection");
+
+        ptrace(PTRACE_DETACH, pid, 0, SIGCONT);
+
+        return false;
+      }
+
+      /* INFO: Leave syscall-stop state before injection */
+      ptrace(PTRACE_CONT, pid, 0, 0);
+      if (ptrace(PTRACE_INTERRUPT, pid, 0, 0) == -1) {
+        PLOGE("Failed to interrupt process for injection");
+
+        ptrace(PTRACE_DETACH, pid, 0, SIGCONT);
+
+        return false;
+      }
+
+      if (!tango_drain_to_event_stop(pid)) {
+        LOGE("Failed to drain to event stop for injection");
+
+        ptrace(PTRACE_DETACH, pid, 0, SIGCONT);
+
+        return false;
+      }
+
+      const char *lib_path = "/data/adb/modules/rezygisk/lib/libzygisk.so";
+      bool result = inject_tango(pid, lib_path, watch.libc_init_resolved, watch.libc_init_got_slot);
+      if (!result) LOGE("Failed to inject tango");
+
+      ptrace(PTRACE_DETACH, pid, 0, SIGCONT);
+
+      return result;
+    }
+  #endif /* __aarch64__ */
 
   if (STOPPED_WITH(SIGSTOP, PTRACE_EVENT_STOP)) {
     char *lib_path = "/data/adb/modules/rezygisk/lib" LP_SELECT("", "64") "/libzygisk.so";

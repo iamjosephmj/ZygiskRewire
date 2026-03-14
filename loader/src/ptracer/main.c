@@ -13,14 +13,26 @@ int main(int argc, char **argv) {
 
     return 0;
   } else if (argc >= 3 && strcmp(argv[1], "trace") == 0) {
-      if (argc >= 4 && strcmp(argv[3], "--restart") == 0) rezygiskd_zygote_restart();
+      bool is_tango = false;
+      bool do_restart = false;
+
+      for (int i = 3; i < argc; i++) {
+        if (strcmp(argv[i], "--restart") == 0) do_restart = true;
+        else if (strcmp(argv[i], "--tango") == 0) is_tango = true;
+      }
+
+      /* INFO: We need to be fast enough to not miss Tango's injection point,
+                 so we just delay for Tango Zygote. */
+      if (do_restart && !is_tango) rezygiskd_zygote_restart();
 
       long pid = strtol(argv[2], 0, 0);
-      if (!trace_zygote(pid)) {
+      if (!trace_zygote(pid, is_tango)) {
         kill(pid, SIGKILL);
 
         return 1;
       }
+
+      if (do_restart && is_tango) rezygiskd_zygote_restart();
 
       return 0;
   } else if (argc >= 2 && strcmp(argv[1], "ctl") == 0) {
