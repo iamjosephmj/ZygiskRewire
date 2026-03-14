@@ -10,6 +10,7 @@
 #include <sys/un.h>
 #include <sys/sysmacros.h>
 #include <sys/mount.h>
+#include <sys/xattr.h>
 
 #include <unistd.h>
 #include <linux/limits.h>
@@ -121,9 +122,9 @@ void unix_datagram_sendto(const char *restrict path, const void *restrict buf, s
 
   set_socket_create_context(current_attr);
 
-  struct sockaddr_un addr;
-  addr.sun_family = AF_UNIX;
-
+  struct sockaddr_un addr = {
+    .sun_family = AF_UNIX
+  };
   strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
   int socket_fd = socket(AF_UNIX, SOCK_DGRAM, 0);
@@ -136,11 +137,15 @@ void unix_datagram_sendto(const char *restrict path, const void *restrict buf, s
   if (connect(socket_fd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
     LOGE("connect: %s\n", strerror(errno));
 
+    close(socket_fd);
+
     return;
   }
 
   if (sendto(socket_fd, buf, len, 0, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
     LOGE("sendto: %s\n", strerror(errno));
+
+    close(socket_fd);
 
     return;
   }
@@ -151,10 +156,7 @@ void unix_datagram_sendto(const char *restrict path, const void *restrict buf, s
 }
 
 int chcon(const char *restrict path, const char *context) {
-  char command[PATH_MAX];
-  snprintf(command, PATH_MAX, "chcon %s %s", context, path);
-
-  return system(command);
+  return lsetxattr(path, "security.selinux", context, strlen(context) + 1, 0);
 }
 
 int unix_listener_from_path(const char *restrict path) {
@@ -179,20 +181,23 @@ int unix_listener_from_path(const char *restrict path) {
   if (bind(socket_fd, (struct sockaddr *)&addr, sizeof(struct sockaddr_un)) == -1) {
     LOGE("bind: %s\n", strerror(errno));
 
+    close(socket_fd);
+
     return -1;
   }
 
   if (listen(socket_fd, 2) == -1) {
     LOGE("listen: %s\n", strerror(errno));
 
-    return -1;
-  }
-
-  if (chcon(path, "u:object_r:zygisk_file:s0") == -1) {
-    LOGE("chcon: %s\n", strerror(errno));
+    close(socket_fd);
 
     return -1;
   }
+
+  LOGI("socket listening on %s (fd=%d)", path, socket_fd);
+
+  if (chcon(path, "u:object_r:zygisk_file:s0") == -1)
+    LOGW("chcon (non-fatal): %s\n", strerror(errno));
 
   return socket_fd;
 }
