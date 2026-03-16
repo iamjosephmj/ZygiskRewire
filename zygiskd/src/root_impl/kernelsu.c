@@ -234,7 +234,9 @@ bool ksu_uid_is_manager(uid_t uid) {
     return false;
   }
 
-  return uid == cmd.uid;
+  /* INFO: For Private Space, UID will be 10xxxxx, being xxxxx the original UID. To check if
+             the UID is the manager UID in Private Space, we "normalize" it with the modulo operator. */
+  return uid % 100000 == cmd.uid;
 }
 
 void ksu_cleanup(void) {
