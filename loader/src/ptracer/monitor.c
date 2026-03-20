@@ -492,8 +492,12 @@ static bool ensure_daemon_created(bool is_64bit) {
     continue;                                                     \
   }
 
+#define APP_PROCESS "/system/bin/app_process"
+#define APP_PROCESS_64 APP_PROCESS "64"
+#define APP_PROCESS_32 APP_PROCESS "32"
+
 #define PRE_INJECT(abi, is_64)                                        \
-  if (strcmp(program, "/system/bin/app_process" # abi) == 0) {        \
+  if (strcmp(program, APP_PROCESS_ ## abi) == 0) {                    \
     tracer = "./bin/zygisk-ptrace" # abi;                             \
     is_tango = false;                                                 \
                                                                       \
@@ -743,10 +747,19 @@ void sigchld_listener_callback() {
 
                   LOGI("exec tracer command: %s trace %s --restart%s", tracer, pid_str, is_tango ? " --tango" : "");
 
-                  if (is_tango) {
-                    execl(tracer, basename(tracer), "trace", pid_str, "--restart", "--tango", NULL);
+                  /* INFO: Only restart companions if it's not the first time */
+                  if ((strcmp(program, APP_PROCESS_64) == 0 && count_zygote64 > 1) || ((strcmp(program, APP_PROCESS_32) == 0 || is_tango) && count_zygote32 > 1)) {
+                    if (is_tango) {
+                      execl(tracer, basename(tracer), "trace", pid_str, "--restart", "--tango", NULL);
+                    } else {
+                      execl(tracer, basename(tracer), "trace", pid_str, "--restart", NULL);
+                    }
                   } else {
-                    execl(tracer, basename(tracer), "trace", pid_str, "--restart", NULL);
+                    if (is_tango) {
+                      execl(tracer, basename(tracer), "trace", pid_str, "--tango", NULL);
+                    } else {
+                      execl(tracer, basename(tracer), "trace", pid_str, NULL);
+                    }
                   }
 
                   PLOGE("failed to exec, kill");

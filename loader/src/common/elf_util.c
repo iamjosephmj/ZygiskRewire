@@ -364,8 +364,6 @@ ElfImg *ElfImg_create(const char *elf, void *base) {
     } else {
       LOGE(".dynsym sh_link (%u) is out of bounds (%u)", dynsym_shdr->sh_link, img->header->e_shnum);
     }
-  } else {
-    LOGW("No .dynsym section found or section headers missing");
   }
 
   if (symtab_shdr && shdr_base) {
@@ -388,8 +386,6 @@ ElfImg *ElfImg_create(const char *elf, void *base) {
       img->symstr_offset_for_symtab = 0;
     }
   } else {
-    LOGD("No .symtab section found or section headers missing");
-
     img->symtab_start = NULL;
     img->symtab_count = 0;
     img->symstr_offset_for_symtab = 0;
@@ -440,11 +436,7 @@ ElfImg *ElfImg_create(const char *elf, void *base) {
 bool _load_symtabs(ElfImg *img) {
   if (img->symtabs_) return true;
 
-  if (!img->symtab_start || img->symstr_offset_for_symtab == 0 || img->symtab_count == 0) {
-    LOGE("Cannot load symtabs: .symtab section or its string table not found/valid.");
-
-    return false;
-  }
+  if (!img->symtab_start || img->symstr_offset_for_symtab == 0 || img->symtab_count == 0) return false;
 
   size_t valid_symtabs_amount = calculate_valid_symtabs_amount(img);
   if (valid_symtabs_amount == 0) {
@@ -605,11 +597,7 @@ ElfW(Addr) ElfLookup(ElfImg *restrict img, const char *restrict name, uint32_t h
 }
 
 ElfW(Addr) LinearLookup(ElfImg *img, const char *restrict name, unsigned char *sym_type) {
-  if (!_load_symtabs(img)) {
-    LOGE("Failed to load symtabs for linear lookup of %s", name);
-
-    return 0;
-  }
+  if (!_load_symtabs(img)) return 0;
 
   size_t valid_symtabs_amount = calculate_valid_symtabs_amount(img);
   if (valid_symtabs_amount == 0) {
@@ -636,7 +624,7 @@ ElfW(Addr) LinearLookup(ElfImg *img, const char *restrict name, unsigned char *s
 
 ElfW(Addr) LinearLookupByPrefix(ElfImg *img, const char *prefix, unsigned char *sym_type) {
   if (!_load_symtabs(img)) {
-    LOGE("Failed to load symtabs for linear lookup by prefix of %s", prefix);
+    // LOGE("Failed to load symtabs for linear lookup by prefix of %s", prefix);
 
     return 0;
   }

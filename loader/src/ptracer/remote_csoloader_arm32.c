@@ -362,8 +362,6 @@ static bool find_dynsym_value(int fd, const struct elf_dyn_info *info, const cha
     return true;
   }
 
-  LOGE("Symbol not found in dynsym: %s", sym_name);
-
   return false;
 }
 
