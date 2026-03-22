@@ -648,6 +648,32 @@ static bool api_plt_hook_commit_v4(void) {
   return lsplt_commit_hook();
 }
 
+#ifndef NDEBUG
+  #define RZ_CHECK_MODULE_ID(id, ret)                                                                                              \
+    void *return_addr = __builtin_return_address(0);                                                                               \
+    /* INFO: Invalid id by default */                                                                                              \
+    void *real_id = (void *)zygisk_module_length;                                                                                  \
+                                                                                                                                   \
+    for (size_t i = 0; i < zygisk_module_length; i++) {                                                                            \
+      struct rezygisk_module *mod = &zygisk_modules[i];                                                                            \
+      if (!mod->lib.img) continue;                                                                                                 \
+                                                                                                                                   \
+      if (return_addr > mod->lib.img->base && return_addr < (void *)((uintptr_t)mod->lib.img->base + mod->lib.img->size)) {        \
+        real_id = (void *)i;                                                                                                       \
+                                                                                                                                   \
+        break;                                                                                                                     \
+      }                                                                                                                            \
+    }                                                                                                                              \
+                                                                                                                                   \
+    if (real_id != id) {                                                                                                           \
+      LOGE("Module is trying to set option to an id different from its own (real: %zu, given: %zu)", (size_t)real_id, (size_t)id); \
+                                                                                                                                   \
+      return ret;                                                                                                                  \
+    }
+#else
+  #define RZ_CHECK_MODULE_ID(id, ret)
+#endif
+
 static int api_connect_companion(void *id) {
   if (!g_ctx) return -1;
 
@@ -656,6 +682,8 @@ static int api_connect_companion(void *id) {
 
     return -1;
   }
+
+  RZ_CHECK_MODULE_ID(id, -1);
 
   return rezygiskd_connect_companion((size_t)id);
 }
@@ -668,6 +696,8 @@ static void api_set_option(void *id, enum rezygisk_options opt) {
 
     return;
   }
+
+  RZ_CHECK_MODULE_ID(id, );
 
   switch (opt) {
     case FORCE_DENYLIST_UNMOUNT: {
@@ -692,6 +722,8 @@ static int api_get_module_dir(void *id) {
 
     return -1;
   }
+
+  RZ_CHECK_MODULE_ID(id, -1);
 
   return rezygiskd_get_module_dir((size_t)id);
 }
