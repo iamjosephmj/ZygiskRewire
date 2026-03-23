@@ -648,56 +648,32 @@ static bool api_plt_hook_commit_v4(void) {
   return lsplt_commit_hook();
 }
 
-#ifndef NDEBUG
-  #define RZ_CHECK_MODULE_ID(id, ret)                                                                                              \
-    void *return_addr = __builtin_return_address(0);                                                                               \
-    /* INFO: Invalid id by default */                                                                                              \
-    void *real_id = (void *)zygisk_module_length;                                                                                  \
-                                                                                                                                   \
-    for (size_t i = 0; i < zygisk_module_length; i++) {                                                                            \
-      struct rezygisk_module *mod = &zygisk_modules[i];                                                                            \
-      if (!mod->lib.img) continue;                                                                                                 \
-                                                                                                                                   \
-      if (return_addr > mod->lib.img->base && return_addr < (void *)((uintptr_t)mod->lib.img->base + mod->lib.img->size)) {        \
-        real_id = (void *)i;                                                                                                       \
-                                                                                                                                   \
-        break;                                                                                                                     \
-      }                                                                                                                            \
-    }                                                                                                                              \
-                                                                                                                                   \
-    if (real_id != id) {                                                                                                           \
-      LOGE("Module is trying to set option to an id different from its own (real: %zu, given: %zu)", (size_t)real_id, (size_t)id); \
-                                                                                                                                   \
-      return ret;                                                                                                                  \
-    }
-#else
-  #define RZ_CHECK_MODULE_ID(id, ret)
-#endif
+/* INFO: Avoid common mistakes of not utilizing implementation member (impl) when calling
+           any Zygisk API functions by logging that error. */
+#define RZID_MAGIC ('R' + 'Z' + 'I' + 'D')
+#define ENCODE_ID(id) ((void *)((size_t)(id) + RZID_MAGIC))
+#define DECODE_ID(ptr) ((size_t)(ptr) - RZID_MAGIC)
 
 static int api_connect_companion(void *id) {
   if (!g_ctx) return -1;
 
-  if ((size_t)id >= zygisk_module_length) {
-    LOGE("Invalid module id %zu", (size_t)id);
+  if ((size_t)id < RZID_MAGIC || (size_t)id >= RZID_MAGIC + zygisk_module_length) {
+    LOGE("Invalid (encoded) module id %zu", (size_t)id);
 
     return -1;
   }
 
-  RZ_CHECK_MODULE_ID(id, -1);
-
-  return rezygiskd_connect_companion((size_t)id);
+  return rezygiskd_connect_companion(DECODE_ID(id));
 }
 
 static void api_set_option(void *id, enum rezygisk_options opt) {
   if (!g_ctx) return;
 
-  if ((size_t)id >= zygisk_module_length) {
-    LOGE("Invalid module id %zu", (size_t)id);
+  if ((size_t)id < RZID_MAGIC || (size_t)id >= RZID_MAGIC + zygisk_module_length) {
+    LOGE("Invalid (encoded) module id %zu", (size_t)id);
 
     return;
   }
-
-  RZ_CHECK_MODULE_ID(id, );
 
   switch (opt) {
     case FORCE_DENYLIST_UNMOUNT: {
@@ -706,7 +682,7 @@ static void api_set_option(void *id, enum rezygisk_options opt) {
       break;
     }
     case DLCLOSE_MODULE_LIBRARY: {
-      struct rezygisk_module *m_lib = &zygisk_modules[(size_t)id];
+      struct rezygisk_module *m_lib = &zygisk_modules[DECODE_ID(id)];
       m_lib->unload = true;
 
       break;
@@ -717,15 +693,13 @@ static void api_set_option(void *id, enum rezygisk_options opt) {
 static int api_get_module_dir(void *id) {
   if (!g_ctx) return -1;
 
-  if ((size_t)id >= zygisk_module_length) {
-    LOGE("Invalid module id %zu", (size_t)id);
+  if ((size_t)id < RZID_MAGIC || (size_t)id >= RZID_MAGIC + zygisk_module_length) {
+    LOGE("Invalid (encoded) module id %zu", (size_t)id);
 
     return -1;
   }
 
-  RZ_CHECK_MODULE_ID(id, -1);
-
-  return rezygiskd_get_module_dir((size_t)id);
+  return rezygiskd_get_module_dir(DECODE_ID(id));
 }
 
 static uint32_t api_get_flags(void) {
@@ -739,7 +713,7 @@ bool rezygisk_module_register(struct rezygisk_api *api, struct rezygisk_abi cons
 
   LOGD("Registering module with API version %ld", target_module->api_version);
 
-  struct rezygisk_module *m = &zygisk_modules[(size_t)api->impl];
+  struct rezygisk_module *m = &zygisk_modules[DECODE_ID(api->impl)];
   m->abi = *target_module;
   m->api = *api;
 
@@ -920,7 +894,7 @@ static bool load_modules_only(void) {
     }
 
     zygisk_modules[zygisk_module_length].api.register_module = rezygisk_module_register;
-    zygisk_modules[zygisk_module_length].api.impl = (void *)zygisk_module_length;
+    zygisk_modules[zygisk_module_length].api.impl = ENCODE_ID((void *)zygisk_module_length);
     zygisk_modules[zygisk_module_length].zygisk_module_entry = (void (*)(void *, void *))entry;
 
     LOGD("Loaded module [%s]. Entry: %p", lib_path, entry);
