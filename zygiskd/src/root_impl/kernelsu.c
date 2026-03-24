@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <sys/prctl.h>
 #include <sys/ioctl.h>
+#include <sys/system_properties.h>
 
 #include <unistd.h>
 #include <sys/syscall.h>
@@ -71,8 +72,20 @@ static bool supports_manager_uid_retrieval = false;
 static bool ksu_uses_new_ksuctl = false;
 
 void ksu_get_existence(struct root_impl_state *state) {
+  char platform[PROP_VALUE_MAX];
+  get_property("ro.board.platform", platform);
+
+  /* INFO: On Waydroid, the SYS_reboot call will trigger a SIGSYS signal, resulting
+             in the crash of ReZygiskd. To avoid that, read the platform property 
+             and not try to call KernelSU v3 interface, jumping to KernelSU v1
+             interface which doesn't require the SYS_reboot call. */
+  if (strcmp(platform, "waydroid") == 0)
+    goto try_prctl;
+
   syscall(SYS_reboot, KSU_INSTALL_MAGIC1, KSU_INSTALL_MAGIC2, 0, (void *)&ksu_fd);
   if (ksu_fd == -1) {
+    try_prctl:
+
     /* INFO: Perhaps it uses the old ksuctl interface */
     int reply_ok = 0;
 
