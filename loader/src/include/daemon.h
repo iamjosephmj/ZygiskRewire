@@ -22,7 +22,8 @@ enum rezygiskd_actions {
   GetModuleDir,
   ZygoteRestart,
   SystemServerStarted,
-  UpdateMountNamespace
+  UpdateMountNamespace,
+  RemoveModule
 };
 
 struct zygisk_modules {
@@ -78,5 +79,7 @@ void rezygiskd_zygote_restart();
 void rezygiskd_system_server_started();
 
 bool rezygiskd_update_mns(enum mount_namespace_state nms_state, char *buf, size_t buf_size);
+
+bool rezygiskd_remove_module(size_t index);
 
 #endif /* DAEMON_H */

@@ -355,3 +355,22 @@ bool rezygiskd_update_mns(enum mount_namespace_state nms_state, char *buf, size_
 
   return true;
 }
+
+bool rezygiskd_remove_module(size_t index) {
+  int fd = rezygiskd_connect(1);
+  if (fd == -1) {
+    PLOGE("connection to ReZygiskd");
+
+    return false;
+  }
+
+  write_uint8_t(fd, (uint8_t)RemoveModule);
+  write_size_t(fd, index);
+
+  uint8_t res = 0;
+  read_uint8_t(fd, &res);
+
+  close(fd);
+
+  return res == 1;
+}

@@ -881,6 +881,13 @@ static bool load_modules_only(void) {
     if (!csoloader_load(&zygisk_modules[zygisk_module_length].lib, lib_path)) {
       LOGE("Failed to load module [%s]", lib_path);
 
+      /* INFO: In case a module failed to load, update the list of available modules
+           in ReZygiskd to avoid a mismatch between the loaded modules in ReZygisk
+           Zygote library and the available modules in ReZygiskd. */
+      /* TODO: Update the list of modules for ReZygisk monitor, so that it can update
+                 for WebUI. That is simply cosmetic, though. */
+      rezygiskd_remove_module(i);
+
       continue;
     }
 
@@ -889,6 +896,8 @@ static bool load_modules_only(void) {
       LOGE("Failed to find entry point in module [%s]", lib_path);
 
       csoloader_unload(&zygisk_modules[zygisk_module_length].lib);
+
+      rezygiskd_remove_module(i);
 
       continue;
     }
@@ -950,7 +959,6 @@ static void rz_run_modules_post(struct zygisk_context *ctx) {
 
 static void rz_app_specialize_pre(struct zygisk_context *ctx) {
   FLAG_SET(ctx, APP_SPECIALIZE);
-
 
   /* INFO: Isolated services have different UIDs than the main apps. Because
               numerous root implementations base themselves in the UID of the

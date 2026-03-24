@@ -629,6 +629,42 @@ void zygiskd_start(char *restrict argv[]) {
 
         break;
       }
+      case RemoveModule: {
+        size_t index = 0;
+        ssize_t ret = read_size_t(client_fd, &index);
+        ASSURE_SIZE_READ_BREAK("RemoveModule", "index", ret, sizeof(index));
+
+        if (index >= context.len) {
+          LOGE("Invalid module index: %zu\n", index);
+
+          ret = write_uint8_t(client_fd, 0);
+          ASSURE_SIZE_WRITE_BREAK("RemoveModule", "response", ret, sizeof(uint8_t));
+
+          close(client_fd);
+
+          break;
+        }
+
+        struct Module *module = &context.modules[index];
+        if (module->companion >= 0) {
+          close(module->companion);
+          module->companion = -1;
+        }
+
+        free(module->name);
+        module->name = NULL;
+
+        close(module->lib_fd);
+        module->lib_fd = -1;
+
+        memmove(&context.modules[index], &context.modules[index + 1], (context.len - index - 1) * sizeof(struct Module));
+        context.len--;
+
+        ret = write_uint8_t(client_fd, 1);
+        ASSURE_SIZE_WRITE_BREAK("RemoveModule", "response", ret, sizeof(uint8_t));
+
+        break;
+      }
     }
 
     if (action != RequestCompanionSocket) close(client_fd);
