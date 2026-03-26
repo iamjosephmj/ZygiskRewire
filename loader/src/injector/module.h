@@ -175,6 +175,14 @@ static inline void rz_module_call_on_load(struct rezygisk_module *m, void *env) 
 }
 
 static inline void rz_module_call_pre_app_specialize(struct rezygisk_module *m, struct app_specialize_args_v5 *args) {
+  if (!m->abi.pre_app_specialize) {
+    /* NOTE: Original Zygisk API expects all modules to have all specialize functions. Not
+               doing so will cause a null pointer deference in Magisk's Zygisk. */
+    LOGW("Module [%s] doesn't have pre_app_specialize. Skipping it.", m->lib.img->elf);
+
+    return;
+  }
+
   switch (m->abi.api_version) {
     case 1:
     case 2: {
@@ -218,6 +226,14 @@ static inline void rz_module_call_pre_app_specialize(struct rezygisk_module *m, 
 }
 
 static inline void rz_module_call_post_app_specialize(struct rezygisk_module *m, const struct app_specialize_args_v5 *args) {
+  if (!m->abi.post_app_specialize) {
+    /* NOTE: Original Zygisk API expects all modules to have all specialize functions. Not
+               doing so will cause a null pointer deference in Magisk's Zygisk. */
+    LOGW("Module [%s] doesn't have post_app_specialize. Skipping it.", m->lib.img->elf);
+
+    return;
+  }
+
   switch (m->abi.api_version) {
     case 1:
     case 2: {
@@ -261,10 +277,26 @@ static inline void rz_module_call_post_app_specialize(struct rezygisk_module *m,
 }
 
 static inline void rz_module_call_pre_server_specialize(struct rezygisk_module *m, struct server_specialize_args_v1 *args) {
+  if (!m->abi.pre_server_specialize) {
+    /* NOTE: Original Zygisk API expects all modules to have all specialize functions. Not
+               doing so will cause a null pointer deference in Magisk's Zygisk. */
+    LOGW("Module [%s] doesn't have pre_server_specialize. Skipping it.", m->lib.img->elf);
+
+    return;
+  }
+
   m->abi.pre_server_specialize(m->abi.impl, args);
 }
 
 static inline void rz_module_call_post_server_specialize(struct rezygisk_module *m, const struct server_specialize_args_v1 *args) {
+  if (!m->abi.post_server_specialize) {
+    /* NOTE: Original Zygisk API expects all modules to have all specialize functions. Not
+               doing so will cause a null pointer deference in Magisk's Zygisk. */
+    LOGW("Module [%s] doesn't have post_server_specialize. Skipping it.", m->lib.img->elf);
+
+    return;
+  }
+
   m->abi.post_server_specialize(m->abi.impl, args);
 }
 
