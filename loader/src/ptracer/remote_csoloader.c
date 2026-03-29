@@ -15,6 +15,16 @@
 #include <elf.h>
 #include <link.h>
 
+#include <sys/syscall.h>
+
+#ifndef SYS_mmap
+  #ifdef __NR_mmap
+    #define SYS_mmap __NR_mmap
+  #elif defined(__NR_mmap2)
+    #define SYS_mmap __NR_mmap2
+  #endif
+#endif
+
 #include "logging.h"
 #include "socket_utils.h"
 
@@ -31,6 +41,17 @@ static uintptr_t page_start(uintptr_t addr, size_t page_size) {
 
 static uintptr_t page_end(uintptr_t addr, size_t page_size) {
   return ALIGN_DOWN(addr + page_size - 1, page_size);
+}
+
+static long remote_mmap_offset_arg(off_t file_offset, size_t page_size) {
+  (void) page_size;
+
+  /* INFO: mmap2 needs the offset in page units, unlike mmap */
+  #if defined(__NR_mmap2) && defined(SYS_mmap) && SYS_mmap == __NR_mmap2
+    return (long)(file_offset / (off_t)page_size);
+  #endif
+
+  return (long)file_offset;
 }
 
 /* INFO: Parse ELF headers and compute the total mapping size for PT_LOAD segments. */
@@ -650,12 +671,10 @@ static bool apply_relocations(int pid, int fd, const struct elf_dyn_info *info,
 }
 
 bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *regs,
-                                             uintptr_t libc_return_addr,
-                                             struct maps *local_map, struct maps *remote_map,
-                                             const char *libc_path, const char *lib_path,
-                                             uintptr_t *out_base, size_t *out_total_size,
-                                             uintptr_t *out_entry) {
-  const struct user_regs_struct regs_saved = *regs;
+                                             struct maps *remote_map, struct maps *local_map,
+                                             const char *lib_path, uintptr_t *out_base,
+                                             size_t *out_total_size, uintptr_t *out_entry) {
+  struct user_regs_struct regs_saved = *regs;
 
   long page_size_long = sysconf(_SC_PAGESIZE);
   if (page_size_long <= 0) {
@@ -686,10 +705,14 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
     return false;
   }
 
-  /* INFO: Resolve required libc functions in remote process */
-  void *mmap_addr = find_func_addr(local_map, remote_map, libc_path, "mmap");
-  if (!mmap_addr) {
-    LOGE("Failed to resolve remote mmap");
+  /* INFO: It's better to go raw syscall. It is problematic for new Android versions,
+             which seems to be related to IBT (Indirect Branch Tracking) and GCS
+             (Guarded Control Stack) enforcement, which interfers when trying
+             to use libc's functions.
+  */
+  uintptr_t syscall_gadget = find_syscall_gadget(pid, remote_map);
+  if (!syscall_gadget) {
+    LOGE("Failed to find syscall gadget");
 
     free(phdr);
     close(fd);
@@ -697,75 +720,30 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
     return false;
   }
 
-  void *mprotect_addr = find_func_addr(local_map, remote_map, libc_path, "mprotect");
-  if (!mprotect_addr) {
-    LOGE("Failed to resolve remote mprotect");
-
-    free(phdr);
-    close(fd);
-
-    return false;
-  }
-
-  void *open_addr = find_func_addr(local_map, remote_map, libc_path, "open");
-  if (!open_addr) {
-    LOGE("Failed to resolve remote open");
-
-    free(phdr);
-    close(fd);
-
-    return false;
-  }
-
-  void *close_addr = find_func_addr(local_map, remote_map, libc_path, "close");
-  if (!close_addr) {
-    LOGE("Failed to resolve remote close");
-
-    free(phdr);
-    close(fd);
-
-    return false;
-  }
-
-  long args[6];
-
-  /* INFO: Copy library path into remote memory for file-backed mappings */
   size_t path_len = strlen(lib_path) + 1;
-  args[0] = 0;
-  args[1] = (long)path_len;
-  args[2] = PROT_READ | PROT_WRITE;
-  args[3] = MAP_PRIVATE | MAP_ANONYMOUS;
-  args[4] = -1;
-  args[5] = 0;
+  uintptr_t remote_path = regs_saved.REG_SP - ALIGN_UP(path_len, 16);
+  if (write_proc(pid, remote_path, lib_path, path_len) != (ssize_t)path_len) {
+    LOGE("Failed to write remote path string to stack");
+
+    free(phdr);
+    close(fd);
+
+    return false;
+  }
 
   struct user_regs_struct call_regs = regs_saved;
-  uintptr_t remote_path = remote_call(pid, &call_regs, (uintptr_t)mmap_addr, libc_return_addr, args, 6);
-  if (!remote_path || remote_path == (uintptr_t)MAP_FAILED) {
-    LOGE("remote mmap for path failed: %p", (void *)remote_path);
+  /* INFO: Ensure remote_call's own stack usage stays below our string */
+  call_regs.REG_SP = remote_path;
 
-    free(phdr);
-    close(fd);
+  long args[6];
+  args[0] = AT_FDCWD;
+  args[1] = (long)remote_path;
+  args[2] = O_RDONLY | O_CLOEXEC;
+  args[3] = 0;
 
-    return false;
-  }
-
-  if (write_proc(pid, remote_path, lib_path, path_len) != (ssize_t)path_len) {
-    LOGE("Failed to write remote path string");
-
-    free(phdr);
-    close(fd);
-
-    return false;
-  }
-
-  args[0] = (long)remote_path;
-  args[1] = O_RDONLY | O_CLOEXEC;
-  args[2] = 0;
-
-  call_regs = regs_saved;
-  long remote_fd = (long)remote_call(pid, &call_regs, (uintptr_t)open_addr, libc_return_addr, args, 3);
+  long remote_fd = remote_syscall(pid, &call_regs, syscall_gadget, SYS_openat, args, 4);
   if (remote_fd < 0) {
-    LOGE("Failed to open remote file: %s", lib_path);
+    LOGE("Failed to open remote file: %s (%ld)", lib_path, remote_fd);
 
     free(phdr);
     close(fd);
@@ -782,7 +760,7 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
   args[5] = 0;
 
   call_regs = regs_saved;
-  uintptr_t remote_base = remote_call(pid, &call_regs, (uintptr_t)mmap_addr, libc_return_addr, args, 6);
+  uintptr_t remote_base = (uintptr_t)remote_syscall(pid, &call_regs, syscall_gadget, SYS_mmap, args, 6);
   if (!remote_base || remote_base == (uintptr_t)MAP_FAILED) {
     LOGE("remote mmap reserve failed: %p", (void *)remote_base);
 
@@ -790,7 +768,7 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
 
     args[0] = remote_fd;
   
-    remote_call(pid, &call_regs, (uintptr_t)close_addr, libc_return_addr, args, 1);
+    remote_syscall(pid, &call_regs, syscall_gadget, SYS_close, args, 1);
 
     free(phdr);
     close(fd);
@@ -836,9 +814,9 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
         args[2] = PROT_READ | PROT_WRITE;
         args[3] = MAP_FIXED | MAP_PRIVATE;
         args[4] = remote_fd;
-        args[5] = (long)file_page_offset;
+        args[5] = remote_mmap_offset_arg(file_page_offset, page_size);
 
-        uintptr_t seg_map = remote_call(pid, &call_regs, (uintptr_t)mmap_addr, libc_return_addr, args, 6);
+        uintptr_t seg_map = (uintptr_t)remote_syscall(pid, &call_regs, syscall_gadget, SYS_mmap, args, 6);
         if (!seg_map || seg_map == (uintptr_t)MAP_FAILED) {
           LOGE("remote mmap writable file-backed segment failed for phdr %d", i);
 
@@ -846,7 +824,7 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
 
           args[0] = remote_fd;
   
-          remote_call(pid, &call_regs, (uintptr_t)close_addr, libc_return_addr, args, 1);
+          remote_syscall(pid, &call_regs, syscall_gadget, SYS_close, args, 1);
           free(phdr);
           close(fd);
 
@@ -881,7 +859,7 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
         args[4] = -1;
         args[5] = 0;
 
-        uintptr_t bss_map = remote_call(pid, &call_regs, (uintptr_t)mmap_addr, libc_return_addr, args, 6);
+        uintptr_t bss_map = (uintptr_t)remote_syscall(pid, &call_regs, syscall_gadget, SYS_mmap, args, 6);
         if (!bss_map || bss_map == (uintptr_t)MAP_FAILED) {
           LOGE("remote mmap bss segment failed for phdr %d", i);
 
@@ -890,7 +868,7 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
           args[0] = remote_fd;
 
           call_regs = regs_saved;
-          remote_call(pid, &call_regs, (uintptr_t)close_addr, libc_return_addr, args, 1);
+          remote_syscall(pid, &call_regs, syscall_gadget, SYS_close, args, 1);
           free(phdr);
           close(fd);
 
@@ -912,9 +890,9 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
         args[2] = PROT_READ | PROT_WRITE;
         args[3] = MAP_FIXED | MAP_PRIVATE;
         args[4] = remote_fd;
-        args[5] = (long)file_page_offset;
+        args[5] = remote_mmap_offset_arg(file_page_offset, page_size);
 
-        uintptr_t seg_map = remote_call(pid, &call_regs, (uintptr_t)mmap_addr, libc_return_addr, args, 6);
+        uintptr_t seg_map = (uintptr_t)remote_syscall(pid, &call_regs, syscall_gadget, SYS_mmap, args, 6);
         if (!seg_map || seg_map == (uintptr_t)MAP_FAILED) {
           LOGE("remote mmap file-backed segment failed for phdr %d", i);
 
@@ -922,7 +900,7 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
 
           args[0] = remote_fd;
 
-          remote_call(pid, &call_regs, (uintptr_t)close_addr, libc_return_addr, args, 1);
+          remote_syscall(pid, &call_regs, syscall_gadget, SYS_close, args, 1);
           free(phdr);
           close(fd);
 
@@ -940,7 +918,7 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
         args[4] = -1;
         args[5] = 0;
 
-        uintptr_t bss_map = remote_call(pid, &call_regs, (uintptr_t)mmap_addr, libc_return_addr, args, 6);
+        uintptr_t bss_map = (uintptr_t)remote_syscall(pid, &call_regs, syscall_gadget, SYS_mmap, args, 6);
         if (!bss_map || bss_map == (uintptr_t)MAP_FAILED) {
           LOGE("remote mmap bss segment failed for phdr %d", i);
 
@@ -949,7 +927,7 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
           args[0] = remote_fd;
 
           call_regs = regs_saved;
-          remote_call(pid, &call_regs, (uintptr_t)close_addr, libc_return_addr, args, 1);
+          remote_syscall(pid, &call_regs, syscall_gadget, SYS_close, args, 1);
           free(phdr);
           close(fd);
 
@@ -977,7 +955,7 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
 
   args[0] = remote_fd;
 
-  remote_call(pid, &call_regs, (uintptr_t)close_addr, libc_return_addr, args, 1);
+  remote_syscall(pid, &call_regs, syscall_gadget, SYS_close, args, 1);
 
   struct elf_dyn_info dinfo;
   if (!elf_load_dyn_info(fd, &eh, phdr, &dinfo)) {
@@ -1031,7 +1009,7 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
     args[2] = segs[i].final_prot;
 
     call_regs = regs_saved;
-    remote_call(pid, &call_regs, (uintptr_t)mprotect_addr, libc_return_addr, args, 3);
+    remote_syscall(pid, &call_regs, syscall_gadget, SYS_mprotect, args, 3);
   }
 
   ElfW(Addr) entry_value = 0;

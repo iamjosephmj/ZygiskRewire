@@ -54,6 +54,17 @@ static uint32_t page_end(uint32_t addr, uint32_t page_size) {
   return ALIGN_UP(addr, page_size);
 }
 
+static long remote_mmap_offset_arg(off_t file_offset, size_t page_size) {
+  (void) page_size;
+
+  /* INFO: mmap2 needs the offset in page units, unlike mmap */
+  #if defined(__NR_mmap2) && __NR_mmap == __NR_mmap2
+    return (long)(file_offset / (off_t)page_size);
+  #endif
+
+  return (long)file_offset;
+}
+
 static bool compute_load_layout(int fd, uint32_t page_size, Elf32_Ehdr *eh, Elf32_Phdr **out_phdr, Elf32_Addr *out_min_vaddr, uint32_t *out_map_size) {
   if (!read_loop_offset(fd, eh, sizeof(*eh), 0)) {
     LOGE("Failed to read ELF header");
@@ -469,7 +480,7 @@ bool arm32_find_remote_symbol(struct maps *remote_map, const char *lib_path, con
 }
 
 /* INFO: Resolve a symbol address - either local or from DT_NEEDED libraries. */
-static bool resolve_symbol_addr(int pid, int fd, const struct elf_dyn_info *info,
+static bool resolve_symbol_addr(int fd, const struct elf_dyn_info *info,
                                 struct maps *remote_map, const char *const *needed_paths,
                                 uint32_t load_bias, size_t sym_idx, uintptr_t stub_gadget,
                                 uint32_t *out_addr) {
@@ -549,7 +560,7 @@ static bool apply_rel_section(int pid, int fd, const struct elf_dyn_info *info,
       value = load_bias + addend;
     } else if (type == R_ARM_GLOB_DAT || type == R_ARM_JUMP_SLOT || type == R_ARM_ABS32) {
       uint32_t sym_addr = 0;
-      if (!resolve_symbol_addr(pid, fd, info, remote_map, needed_paths, load_bias, sym, stub_gadget, &sym_addr))
+      if (!resolve_symbol_addr(fd, info, remote_map, needed_paths, load_bias, sym, stub_gadget, &sym_addr))
         return false;
 
       if (sym_addr == 0) value = 0;
@@ -695,33 +706,9 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
   uint32_t load_bias = remote_base - min_vaddr;
 
   size_t path_len = strlen(lib_path) + 1;
-
-  call_regs = regs_saved;
-  args[0] = (long)remote_base;
-  args[1] = (long)page_size;
-  args[2] = PROT_READ | PROT_WRITE;
-  long mp_ret = remote_syscall(pid, &call_regs, syscall_gadget, __NR_mprotect, args, 3);
-  if (mp_ret < 0) {
-    LOGE("Failed to mprotect path page RW (%ld)", mp_ret);
-
-    call_regs = regs_saved;
-    args[0] = (long)remote_base;
-    args[1] = (long)map_size;
-    remote_syscall(pid, &call_regs, syscall_gadget, __NR_munmap, args, 2);
-
-    free(phdr);
-    close(fd);
-
-    return false;
-  }
-
-  if (write_proc(pid, remote_base, lib_path, path_len) != (ssize_t)path_len) {
-    LOGE("Failed to write remote path string");
-
-    call_regs = regs_saved;
-    args[0] = (long)remote_base;
-    args[1] = (long)map_size;
-    remote_syscall(pid, &call_regs, syscall_gadget, __NR_munmap, args, 2);
+  uintptr_t remote_path = regs_saved.REG_SP - ALIGN_UP(path_len, 16);
+  if (write_proc(pid, remote_path, lib_path, path_len) != (ssize_t)path_len) {
+    LOGE("Failed to write remote path string to stack");
 
     free(phdr);
     close(fd);
@@ -731,9 +718,13 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
 
   call_regs = regs_saved;
   args[0] = AT_FDCWD;
-  args[1] = (long)remote_base;
+  args[1] = (long)remote_path;
   args[2] = O_RDONLY | O_CLOEXEC;
   args[3] = 0;
+
+  /* INFO: Ensure remote_call's own stack usage stays below our string */
+  call_regs.REG_SP = remote_path;
+
   long remote_fd = remote_syscall(pid, &call_regs, syscall_gadget, __NR_openat, args, 4);
   if (remote_fd < 0) {
     LOGE("Failed to open remote file: %s (%ld)", lib_path, remote_fd);
@@ -781,7 +772,7 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
         args[2] = PROT_READ | PROT_WRITE;
         args[3] = MAP_FIXED | MAP_PRIVATE;
         args[4] = remote_fd;
-        args[5] = (long)file_page_offset;
+        args[5] = remote_mmap_offset_arg(file_page_offset, page_size);
 
         call_regs = regs_saved;
         long seg_ret = remote_syscall(pid, &call_regs, syscall_gadget, __NR_mmap, args, 6);
@@ -858,7 +849,7 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
       args[2] = prot;
       args[3] = MAP_FIXED | MAP_PRIVATE;
       args[4] = remote_fd;
-      args[5] = (long)file_page_offset;
+      args[5] = remote_mmap_offset_arg(file_page_offset, page_size);
 
       call_regs = regs_saved;
       long seg_ret = remote_syscall(pid, &call_regs, syscall_gadget, __NR_mmap, args, 6);

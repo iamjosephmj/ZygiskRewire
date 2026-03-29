@@ -788,10 +788,16 @@ uintptr_t find_arm32_ret_gadget(int pid, struct maps *remote_map) {
 }
 #endif /* __aarch64__ */
 
+#ifdef __aarch64__
+  #define AARCH64_PSTATE_BTYPE_MASK (3ull << 10)
+#endif
+
 long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_gadget, long sysnr, long *args, size_t args_size) {
   LOGV("remote syscall %ld args %zu at gadget %p", sysnr, args_size, (void *)syscall_gadget);
 
   #if defined(__aarch64__)
+    struct user_regs_struct saved_regs = *regs;
+
     /* x8 = syscall number, x0-x5 = args */
     regs->regs[8] = sysnr;
     for (size_t i = 0; i < 6; i++) {
@@ -801,6 +807,8 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
       regs->regs[i] = args[i];
     }
     regs->REG_IP = syscall_gadget;
+    /* INFO: BTYPE so stepping the aarch64 vDSO svc will be accepted by the CPU */
+    regs->pstate &= ~AARCH64_PSTATE_BTYPE_MASK;
   #elif defined(__arm__)
     /* r7 = syscall number, r0-r5 = args */
     regs->uregs[7] = sysnr;
@@ -866,7 +874,11 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
   if (ptrace(PTRACE_SINGLESTEP, pid, 0, 0) == -1) {
     PLOGE("PTRACE_SINGLESTEP");
 
-    return -1;
+    #ifdef __aarch64__
+      goto aarch64_restore_error;
+    #else
+      return -1;
+    #endif
   }
 
   int status = 0;
@@ -877,7 +889,11 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
       if (errno == EINTR) continue;
       PLOGE("waitpid after PTRACE_SINGLESTEP");
 
-      return -1;
+      #ifdef __aarch64__
+        goto aarch64_restore_error;
+      #else
+        return -1;
+      #endif
     }
     if (waited != pid) continue;
 
@@ -886,7 +902,11 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
       parse_status(status, status_str, sizeof(status_str));
       LOGE("remote syscall stop is not ptrace-stop: %s", status_str);
 
-      return -1;
+      #ifdef __aarch64__
+        goto aarch64_restore_error;
+      #else
+        return -1;
+      #endif
     }
 
     int stop_sig = WSTOPSIG(status);
@@ -898,7 +918,11 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
         parse_status(status, status_str, sizeof(status_str));
         LOGE("remote syscall stuck in ptrace-stop: %s", status_str);
 
-        return -1;
+        #ifdef __aarch64__
+          goto aarch64_restore_error;
+        #else
+          return -1;
+        #endif
       }
 
       LOGV("remote syscall got pending ptrace-stop, re-single-step (retry %d)", step_retries);
@@ -906,7 +930,11 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
       if (ptrace(PTRACE_SINGLESTEP, pid, 0, 0) == -1) {
         PLOGE("PTRACE_SINGLESTEP retry");
 
-        return -1;
+        #ifdef __aarch64__
+          goto aarch64_restore_error;
+        #else
+          return -1;
+        #endif
       }
 
       continue;
@@ -918,16 +946,44 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
     parse_status(status, status_str, sizeof(status_str));
     LOGE("remote syscall unexpected stop: %s", status_str);
 
-    return -1;
+    #ifdef __aarch64__
+      goto aarch64_restore_error;
+    #else
+      return -1;
+    #endif
   }
 
   if (!get_regs(pid, regs)) {
     LOGE("failed to get regs after syscall");
 
-    return -1;
+    #ifdef __aarch64__
+      goto aarch64_restore_error;
+    #else
+      return -1;
+    #endif
   }
 
-  return (long)regs->REG_RET;
+  long ret = (long)regs->REG_RET;
+
+  #ifdef __aarch64__
+    *regs = saved_regs;
+
+    if (!set_regs(pid, regs)) {
+      LOGE("failed to restore regs after syscall");
+
+      return -1;
+    }
+  #endif
+
+  return ret;
+
+  #ifdef __aarch64__
+  aarch64_restore_error:
+    *regs = saved_regs;
+    if (!set_regs(pid, regs)) LOGE("failed to restore regs after syscall error");
+
+    return -1;
+  #endif
 }
 
 void tracee_skip_syscall(int pid) {

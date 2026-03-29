@@ -344,26 +344,11 @@ bool inject_on_main(int pid, const char *lib_path) {
     void *libc_return_addr = find_module_return_addr(map, "libc.so");
     LOGD("libc return addr %p", libc_return_addr);
 
-    const char *libc_path = NULL;
-    for (size_t i = 0; i < map->size; i++) {
-      if (map->maps[i].path == NULL) continue;
-
-      const char *filename = position_after(map->maps[i].path, '/');
-      if (strcmp(filename, "libc.so") == 0) {
-        libc_path = map->maps[i].path;
-
-        LOGD("found libc.so at %s", libc_path);
-
-        break;
-      }
-    }
-
     uintptr_t remote_base = 0;
     size_t remote_size = 0;
     uintptr_t injector_entry = 0;
 
-    if (!remote_csoloader_load_and_resolve_entry(pid, &regs, (uintptr_t)libc_return_addr, local_map, map, libc_path, lib_path,
-                                                 &remote_base, &remote_size, &injector_entry)) {
+    if (!remote_csoloader_load_and_resolve_entry(pid, &regs, map, local_map, lib_path, &remote_base, &remote_size, &injector_entry)) {
       LOGE("remote CSOLoader mapping failed");
 
       free_maps(local_map);
