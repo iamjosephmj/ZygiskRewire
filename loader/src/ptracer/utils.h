@@ -4,11 +4,10 @@
 #include <sys/ptrace.h>
 
 #include "daemon.h"
+#include "misc.h"
 
-#ifdef __LP64__
-  #define LOG_TAG "zygisk-ptrace64"
-#else
-  #define LOG_TAG "zygisk-ptrace32"
+#ifndef LOG_TAG
+  #define LOG_TAG "zygisk-ptrace" LP_SELECT("32", "64")
 #endif
 
 #include "logging.h"
@@ -139,10 +138,5 @@ static inline const char *sigabbrev_np(int sig) {
 }
 
 int get_program(int pid, char *buf, size_t size);
-
-/* INFO: pid = 0, fd != nullptr -> set to fd
-         pid != 0, fd != nullptr -> set to pid ns, give orig ns in fd
-*/
-bool switch_mnt_ns(int pid, int *fd);
 
 #endif /* UTILS_H */

@@ -11,13 +11,7 @@
 #include "apatch.h"
 
 void apatch_get_existence(struct root_impl_state *state) {
-  struct stat s;
-  if (stat("/data/adb/apd", &s) != 0) {
-    if (errno != ENOENT) {
-      LOGE("Failed to stat APatch apd binary: %s\n", strerror(errno));
-    }
-    errno = 0;
-
+  if (access("/data/adb/apd", F_OK) != 0) {
     state->state = Inexistent;
 
     return;
@@ -25,8 +19,7 @@ void apatch_get_existence(struct root_impl_state *state) {
 
   const char *PATH = getenv("PATH");
   if (PATH == NULL) {
-    LOGE("Failed to get PATH environment variable: %s\n", strerror(errno));
-    errno = 0;
+    LOGE("Failed to get PATH environment variable: %s", strerror(errno));
 
     state->state = Inexistent;
 
@@ -34,7 +27,7 @@ void apatch_get_existence(struct root_impl_state *state) {
   }
 
   if (strstr(PATH, "/data/adb/ap/bin") == NULL) {
-    LOGE("APatch's APD binary is not in PATH\n");
+    LOGE("APatch's APD binary is not in PATH");
 
     state->state = Inexistent;
 
@@ -45,9 +38,8 @@ void apatch_get_existence(struct root_impl_state *state) {
   char *const argv[] = { "apd", "-V", NULL };
 
   if (!exec_command(apatch_version, sizeof(apatch_version), "/data/adb/apd", argv)) {
-    LOGE("Failed to execute apd binary: %s\n", strerror(errno));
-    errno = 0;
-
+    LOGE("Failed to execute apd binary: %s", strerror(errno));
+  
     state->state = Inexistent;
 
     return;
@@ -88,15 +80,15 @@ bool _apatch_get_package_config(struct packages_config *restrict config) {
 
   FILE *fp = fopen("/data/adb/ap/package_config", "r");
   if (fp == NULL) {
-    LOGE("Failed to open APatch's package_config: %s\n", strerror(errno));
+    LOGE("Failed to open APatch's package_config: %s", strerror(errno));
 
     return false;
   }
 
-  char line[1048];
+  char line[1024];
   /* INFO: Skip the CSV header */
   if (fgets(line, sizeof(line), fp) == NULL) {
-    LOGE("Failed to read APatch's package_config header: %s\n", strerror(errno));
+    LOGE("Failed to read APatch's package_config header: %s", strerror(errno));
 
     fclose(fp);
 
@@ -106,7 +98,7 @@ bool _apatch_get_package_config(struct packages_config *restrict config) {
   while (fgets(line, sizeof(line), fp) != NULL) {
     struct package_config *tmp_configs = realloc(config->configs, (config->size + 1) * sizeof(struct package_config));
     if (tmp_configs == NULL) {
-      LOGE("Failed to realloc APatch config struct: %s\n", strerror(errno));
+      LOGE("Failed to realloc APatch config struct: %s", strerror(errno));
 
       _apatch_free_package_config(config);
       fclose(fp);
@@ -130,7 +122,7 @@ bool _apatch_get_package_config(struct packages_config *restrict config) {
 
     config->configs[config->size].process = strdup(process_str);
     if (config->configs[config->size].process == NULL) {
-      LOGE("Failed to strdup for the process `%s`: %s\n", process_str, strerror(errno));
+      LOGE("Failed to strdup for the process \"%s\": %s", process_str, strerror(errno));
 
       _apatch_free_package_config(config);
       fclose(fp);
@@ -213,15 +205,14 @@ bool apatch_uid_should_umount(uid_t uid, const char *const process) {
 }
 
 bool apatch_uid_is_manager(uid_t uid) {
-  struct stat s;
-  if (stat("/data/user_de/0/me.bmax.apatch", &s) == -1) {
+  struct stat st;
+  if (stat("/data/user_de/0/me.bmax.apatch", &st) == -1) {
     if (errno != ENOENT) {
-      LOGE("Failed to stat APatch manager data directory: %s\n", strerror(errno));
+      LOGE("Failed to stat APatch manager data directory: %s", strerror(errno));
     }
-    errno = 0;
 
     return false;
   }
 
-  return s.st_uid == uid;
+  return st.st_uid == uid;
 }

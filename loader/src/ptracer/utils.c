@@ -28,55 +28,6 @@
 
 #include "utils.h"
 
-bool switch_mnt_ns(int pid, int *fd) {
-  int nsfd, old_nsfd = -1;
-
-  char path[PATH_MAX];
-  if (pid == 0) {
-    if (fd != NULL) {
-      nsfd = *fd;
-      *fd = -1;
-    } else return false;
-
-    snprintf(path, sizeof(path), "/proc/self/fd/%d", nsfd);
-  } else {
-    if (fd != NULL) {
-      old_nsfd = open("/proc/self/ns/mnt", O_RDONLY | O_CLOEXEC);
-      if (old_nsfd == -1) {
-        PLOGE("get old nsfd");
-
-        return false;
-      }
-
-      *fd = old_nsfd;
-    }
-
-    snprintf(path, sizeof(path), "/proc/%d/ns/mnt", pid);
-
-    nsfd = open(path, O_RDONLY | O_CLOEXEC);
-    if (nsfd == -1) {
-      PLOGE("open nsfd %s", path);
-
-      close(old_nsfd);
-
-      return false;
-    }
-  }
-
-  if (setns(nsfd, CLONE_NEWNS) == -1) {
-    PLOGE("set ns to %s", path);
-
-    close(nsfd);
-    close(old_nsfd);
-
-    return false;
-  }
-
-  close(nsfd);
-
-  return true;
-}
-
 struct maps *parse_maps(const char *filename) {
   FILE *fp = fopen(filename, "r");
   if (!fp) {
@@ -170,10 +121,6 @@ struct maps *parse_maps(const char *filename) {
 }
 
 void free_maps(struct maps *maps) {
-  if (!maps) {
-    return;
-  }
-
   for (size_t i = 0; i < maps->size; i++) {
     free((void *)maps->maps[i].path);
   }
@@ -795,6 +742,8 @@ uintptr_t find_arm32_ret_gadget(int pid, struct maps *remote_map) {
 long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_gadget, long sysnr, long *args, size_t args_size) {
   LOGV("remote syscall %ld args %zu at gadget %p", sysnr, args_size, (void *)syscall_gadget);
 
+  long ret = 0;
+
   #if defined(__aarch64__)
     struct user_regs_struct saved_regs = *regs;
 
@@ -874,11 +823,8 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
   if (ptrace(PTRACE_SINGLESTEP, pid, 0, 0) == -1) {
     PLOGE("PTRACE_SINGLESTEP");
 
-    #ifdef __aarch64__
-      goto aarch64_restore_error;
-    #else
-      return -1;
-    #endif
+    ret = -1;
+    goto restore_regs;
   }
 
   int status = 0;
@@ -889,11 +835,8 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
       if (errno == EINTR) continue;
       PLOGE("waitpid after PTRACE_SINGLESTEP");
 
-      #ifdef __aarch64__
-        goto aarch64_restore_error;
-      #else
-        return -1;
-      #endif
+      ret = -1;
+      goto restore_regs;
     }
     if (waited != pid) continue;
 
@@ -902,11 +845,8 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
       parse_status(status, status_str, sizeof(status_str));
       LOGE("remote syscall stop is not ptrace-stop: %s", status_str);
 
-      #ifdef __aarch64__
-        goto aarch64_restore_error;
-      #else
-        return -1;
-      #endif
+      ret = -1;
+      goto restore_regs;
     }
 
     int stop_sig = WSTOPSIG(status);
@@ -918,11 +858,8 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
         parse_status(status, status_str, sizeof(status_str));
         LOGE("remote syscall stuck in ptrace-stop: %s", status_str);
 
-        #ifdef __aarch64__
-          goto aarch64_restore_error;
-        #else
-          return -1;
-        #endif
+        ret = -1;
+        goto restore_regs;
       }
 
       LOGV("remote syscall got pending ptrace-stop, re-single-step (retry %d)", step_retries);
@@ -930,11 +867,8 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
       if (ptrace(PTRACE_SINGLESTEP, pid, 0, 0) == -1) {
         PLOGE("PTRACE_SINGLESTEP retry");
 
-        #ifdef __aarch64__
-          goto aarch64_restore_error;
-        #else
-          return -1;
-        #endif
+        ret = -1;
+        goto restore_regs;
       }
 
       continue;
@@ -946,44 +880,29 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
     parse_status(status, status_str, sizeof(status_str));
     LOGE("remote syscall unexpected stop: %s", status_str);
 
-    #ifdef __aarch64__
-      goto aarch64_restore_error;
-    #else
-      return -1;
-    #endif
+    ret = -1;
+    goto restore_regs;
   }
 
   if (!get_regs(pid, regs)) {
     LOGE("failed to get regs after syscall");
 
-    #ifdef __aarch64__
-      goto aarch64_restore_error;
-    #else
-      return -1;
-    #endif
+    ret = -1;
+    goto restore_regs;
   }
 
-  long ret = (long)regs->REG_RET;
+  /* INFO: Extract the return value */
+  ret = (long)regs->REG_RET;
 
-  #ifdef __aarch64__
-    *regs = saved_regs;
+  restore_regs:
+    #ifdef __aarch64__
+      *regs = saved_regs;
+      if (!set_regs(pid, regs)) LOGE("failed to restore regs after syscall error");
 
-    if (!set_regs(pid, regs)) {
-      LOGE("failed to restore regs after syscall");
-
-      return -1;
-    }
-  #endif
-
-  return ret;
-
-  #ifdef __aarch64__
-  aarch64_restore_error:
-    *regs = saved_regs;
-    if (!set_regs(pid, regs)) LOGE("failed to restore regs after syscall error");
-
-    return -1;
-  #endif
+      return ret;
+    #endif
+  
+    return ret;
 }
 
 void tracee_skip_syscall(int pid) {

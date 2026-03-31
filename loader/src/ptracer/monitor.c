@@ -27,7 +27,6 @@
 
 #define STOPPED_WITH(sig, event) WIFSTOPPED(sigchld_status) && (sigchld_status >> 8 == ((sig) | (event << 8)))
 
-
 static bool update_status(const char *message);
 
 char monitor_stop_reason[32];

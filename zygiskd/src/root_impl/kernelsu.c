@@ -226,17 +226,16 @@ bool ksu_uid_is_manager(uid_t uid) {
     }
 
     const char *manager_path = ksu_manager_paths[variant];
-    struct stat s;
-    if (stat(manager_path, &s) == -1) {
+    struct stat st;
+    if (stat(manager_path, &st) == -1) {
       if (errno != ENOENT) {
-        LOGE("Failed to stat KSU manager data directory: %s\n", strerror(errno));
+        LOGE("Failed to stat KSU manager data directory: %s", strerror(errno));
       }
-      errno = 0;
 
       return false;
     }
 
-    return s.st_uid == uid;
+    return st.st_uid == uid;
   }
 
   /* INFO: If it uses ioctl, it already has support to get manager UID operation */

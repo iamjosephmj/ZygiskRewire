@@ -624,7 +624,7 @@ static bool apply_rel_section(int pid, int fd, const struct elf_dyn_info *info,
         return false;
       }
     #else
-      (void) info; (void) local_map; (void) remote_map; (void) sym; (void) type; (void) needed_paths; (void) addend; (void) read_remote_addr;
+      (void) info; (void) local_map; (void) remote_map; (void) sym; (void) type; (void) needed_paths; (void) addend; (void) read_remote_addr; (void) target;
 
       LOGE("Unsupported REL relocation on this arch");
 

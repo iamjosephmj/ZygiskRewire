@@ -15,10 +15,9 @@
 
 #include <android/log.h>
 
-#include "utils.h"
+#define LOG_TAG "zygiskd-companion" LP_SELECT("32", "64")
 
-#undef LOG_TAG
-#define LOG_TAG lp_select("zygiskd-companion32", "zygiskd-companion64")
+#include "utils.h"
 
 typedef void (*zygisk_companion_entry)(int);
 
@@ -33,14 +32,14 @@ zygisk_companion_entry load_module(int fd) {
 
   void *handle = dlopen(path, RTLD_NOW);
   if (!handle) {
-    LOGE("Failed to dlopen module: %s\n", dlerror());
+    LOGE("Failed to dlopen module: %s", dlerror());
 
     return NULL;
   }
 
   void *entry = dlsym(handle, "zygisk_companion_entry");
   if (!entry) {
-    LOGE("Failed to dlsym zygisk_companion_entry: %s\n", dlerror());
+    LOGE("Failed to dlsym zygisk_companion_entry: %s", dlerror());
 
     dlclose(handle);
 
@@ -59,7 +58,7 @@ void *entry_thread(void *arg) {
 
   struct stat st0 = { 0 };
   if (fstat(fd, &st0) == -1) {
-    LOGE(" - Failed to get initial client fd stats: %s\n", strerror(errno));
+    LOGE(" - Failed to get initial client fd stats: %s", strerror(errno));
 
     free(args);
 
@@ -74,7 +73,7 @@ void *entry_thread(void *arg) {
   */
   struct stat st1;
   if (fstat(fd, &st1) != -1 || st0.st_ino == st1.st_ino) {
-    LOGI(" - Client fd changed after module entry\n");
+    LOGI(" - Client fd changed after module entry");
 
     close(fd);
   }
@@ -91,37 +90,37 @@ void companion_entry(int fd) {
   char name[256 + 1];
   ssize_t ret = read_string(fd, name, sizeof(name));
   if (ret == -1) {
-    LOGE("Failed to read module name\n");
+    LOGE("Failed to read module name");
 
     goto cleanup;
   }
 
-  LOGI(" - Module name: \"%s\"\n", name);
+  LOGI(" - Module name: \"%s\"", name);
 
   int library_fd = read_fd(fd);
   if (library_fd == -1) {
-    LOGE("Failed to receive library fd\n");
+    LOGE("Failed to receive library fd");
 
     goto cleanup;
   }
 
-  LOGI(" - Library fd: %d\n", library_fd);
+  LOGI(" - Library fd: %d", library_fd);
 
   zygisk_companion_entry module_entry = load_module(library_fd);
   close(library_fd);
 
   if (module_entry == NULL) {
-    LOGE(" - No companion module entry for module: %s\n", name);
+    LOGE(" - No companion module entry for module: %s", name);
 
     ret = write_uint8_t(fd, 0);
-    ASSURE_SIZE_WRITE("ZygiskdCompanion", "module_entry", ret, sizeof(uint8_t));
+    ASSURE_SIZE_WRITE("ZygiskdCompanion", "module_entry", ret, sizeof(uint8_t), goto cleanup);
 
     goto cleanup;
   } else {
-    LOGI(" - Module entry found\n");
+    LOGI(" - Module entry found");
 
     ret = write_uint8_t(fd, 1);
-    ASSURE_SIZE_WRITE("ZygiskdCompanion", "module_entry", ret, sizeof(uint8_t));
+    ASSURE_SIZE_WRITE("ZygiskdCompanion", "module_entry", ret, sizeof(uint8_t), goto cleanup);
   }
 
   struct sigaction sa = { .sa_handler = SIG_IGN };
@@ -129,21 +128,21 @@ void companion_entry(int fd) {
 
   while (1) {
     if (!check_unix_socket(fd, true)) {
-      LOGE("Something went wrong in companion. Bye!\n");
+      LOGE("Something went wrong in companion. Bye!");
 
       break;
     }
 
     int client_fd = read_fd(fd);
     if (client_fd == -1) {
-      LOGE("Failed to receive client fd\n");
+      LOGE("Failed to receive client fd");
 
       break;
     }
 
     struct companion_module_thread_args *args = malloc(sizeof(struct companion_module_thread_args));
     if (args == NULL) {
-      LOGE("Failed to allocate memory for thread args\n");
+      LOGE("Failed to allocate memory for thread args");
 
       close(client_fd);
 
@@ -157,7 +156,7 @@ void companion_entry(int fd) {
 
     ret = write_uint8_t(client_fd, 1);
     if (ret != sizeof(uint8_t)) {
-      LOGE("Failed to send client_fd in ZygiskdCompanion: Expected %zu, got %zd\n", sizeof(uint8_t), ret);
+      LOGE("Failed to send client_fd in ZygiskdCompanion: Expected %zu, got %zd", sizeof(uint8_t), ret);
 
       free(args);
       close(client_fd);
@@ -169,7 +168,7 @@ void companion_entry(int fd) {
     if (pthread_create(&thread, NULL, entry_thread, (void *)args) == 0)
       continue;
 
-    LOGE(" - Failed to create thread for companion module\n");
+    LOGE(" - Failed to create thread for companion module");
 
     close(client_fd);
     free(args);
@@ -179,7 +178,7 @@ void companion_entry(int fd) {
 
   cleanup:
     close(fd);
-    LOGE("Companion thread exited\n");
+    LOGE("Companion thread exited");
 
     exit(0);
 }

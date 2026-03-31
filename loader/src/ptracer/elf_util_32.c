@@ -665,7 +665,7 @@ struct sym_info_32 elf_32_get_symbol(struct elf_32 *img, uint32_t addr) {
 
   for (size_t i = 0; i < valid_symtabs_amount; i++) {
     Elf32_Sym *sym = img->symtabs_[i].sym;
-    if (sym->st_value == 0 || sym->st_size == 0) continue;
+    if (!sym || sym->st_value == 0 || sym->st_size == 0) continue;
 
     Elf32_Addr sym_start = (Elf32_Addr)(img->base + sym->st_value - img->bias);
     Elf32_Addr sym_end = sym_start + sym->st_size;

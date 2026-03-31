@@ -24,9 +24,6 @@
 #include "root_impl/kernelsu.h"
 #include "root_impl/magisk.h"
 
-int clean_namespace_fd = 0;
-int mounted_namespace_fd = 0;
-
 bool switch_mount_namespace(pid_t pid) {
   char path[PATH_MAX];
   snprintf(path, sizeof(path), "/proc/%d/ns/mnt", pid);
@@ -58,18 +55,15 @@ void get_property(const char *restrict name, char *restrict output) {
 }
 
 void set_socket_create_context(const char *restrict context) {
-  char path[PATH_MAX];
-  snprintf(path, PATH_MAX, "/proc/thread-self/attr/sockcreate");
-
-  FILE *sockcreate = fopen(path, "w");
+  FILE *sockcreate = fopen("/proc/thread-self/attr/sockcreate", "w");
   if (sockcreate == NULL) {
-    LOGE("Failed to open /proc/thread-self/attr/sockcreate: %s Now trying to via gettid().\n", strerror(errno));
+    LOGE("Failed to open sockcreate with %d: %s. Retrying with tid.\n", errno, strerror(errno));
 
     goto fail;
   }
 
   if (fwrite(context, 1, strlen(context), sockcreate) != strlen(context)) {
-    LOGE("Failed to write to /proc/thread-self/attr/sockcreate: %s Now trying to via gettid().\n", strerror(errno));
+    LOGE("Failed to write to sockcreate with %d: %s. Retrying with tid.\n", errno, strerror(errno));
 
     fclose(sockcreate);
 
@@ -81,17 +75,19 @@ void set_socket_create_context(const char *restrict context) {
   return;
 
   fail:
+    ;
+    char path[PATH_MAX];
     snprintf(path, PATH_MAX, "/proc/self/task/%d/attr/sockcreate", gettid());
 
     sockcreate = fopen(path, "w");
     if (sockcreate == NULL) {
-      LOGE("Failed to open %s: %s\n", path, strerror(errno));
+      LOGE("Failed to open tid sockcreate with %d: %s\n", errno, strerror(errno));
 
       return;
     }
 
     if (fwrite(context, 1, strlen(context), sockcreate) != strlen(context)) {
-      LOGE("Failed to write to %s: %s\n", path, strerror(errno));
+      LOGE("Failed to write to tid sockcreate with %d: %s\n", errno, strerror(errno));
 
       return;
     }
@@ -100,10 +96,7 @@ void set_socket_create_context(const char *restrict context) {
 }
 
 static void get_current_attr(char *restrict output, size_t size) {
-  char path[PATH_MAX];
-  snprintf(path, PATH_MAX, "/proc/self/attr/current");
-
-  FILE *current = fopen(path, "r");
+  FILE *current = fopen("/proc/self/attr/current", "r");
   if (current == NULL) {
     LOGE("fopen: %s\n", strerror(errno));
 
@@ -193,8 +186,6 @@ int unix_listener_from_path(const char *restrict path) {
 
     return -1;
   }
-
-  LOGI("socket listening on %s (fd=%d)", path, socket_fd);
 
   if (chcon(path, "u:object_r:zygisk_file:s0") == -1)
     LOGW("chcon (non-fatal): %s\n", strerror(errno));
@@ -650,15 +641,13 @@ bool umount_root(struct root_impl impl) {
     return false;
   }
 
-  /* INFO: "Magisk" is the longest word that will ever be put in source_name */
-  char source_name[sizeof("magisk")];
-  if (impl.impl == KernelSU) strcpy(source_name, "KSU");
-  else if (impl.impl == APatch) strcpy(source_name, "APatch");
-  else strcpy(source_name, "magisk");
+  char *source_name = "magisk";
+  if (impl.impl == KernelSU) source_name = "KSU";
+  else if (impl.impl == APatch) source_name = "APatch";
 
   LOGI("[%s] Unmounting root", source_name);
 
-  const char **targets_to_unmount = NULL;
+  char **targets_to_unmount = NULL;
   size_t num_targets = 0;
 
   for (size_t i = 0; i < mounts.length; i++) {
@@ -671,16 +660,19 @@ bool umount_root(struct root_impl impl) {
 
     if (!should_unmount) continue;
 
-    num_targets++;
-    targets_to_unmount = realloc(targets_to_unmount, num_targets * sizeof(char*));
-    if (targets_to_unmount == NULL) {
+    char **tmp_targets = realloc(targets_to_unmount, (num_targets + 1) * sizeof(char*));
+    if (tmp_targets == NULL) {
       LOGE("[%s] Failed to allocate memory for targets_to_unmount\n", source_name);
 
       free(targets_to_unmount);
+
       free_mounts(&mounts);
 
       return false;
     }
+    targets_to_unmount = tmp_targets;
+
+    num_targets++;
 
     targets_to_unmount[num_targets - 1] = mount.target;
   }
@@ -689,10 +681,13 @@ bool umount_root(struct root_impl impl) {
     const char *target = targets_to_unmount[i - 1];
     if (umount2(target, MNT_DETACH) == -1) {
       LOGE("[%s] Failed to unmount %s: %s\n", source_name, target, strerror(errno));
-    } else {
-      LOGI("[%s] Unmounted %s\n", source_name, target);
+
+      continue;
     }
+
+    LOGI("[%s] Unmounted %s\n", source_name, target);
   }
+
   free(targets_to_unmount);
 
   free_mounts(&mounts);
@@ -701,6 +696,9 @@ bool umount_root(struct root_impl impl) {
 }
 
 int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl impl) {
+  static int clean_namespace_fd = 0;
+  static int mounted_namespace_fd = 0;
+
   if (mns_state == Clean && clean_namespace_fd != 0) return clean_namespace_fd;
   if (mns_state == Mounted && mounted_namespace_fd != 0) return mounted_namespace_fd;
 
@@ -718,11 +716,8 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
   if (fork_pid < 0) {
     LOGE("fork: %s\n", strerror(errno));
 
-    if (close(socket_parent) == -1)
-      LOGE("Failed to close socket_parent: %s\n", strerror(errno));
-
-    if (close(socket_child) == -1)
-      LOGE("Failed to close socket_child: %s\n", strerror(errno));
+    close(socket_parent);
+    close(socket_child);
 
     return -1;
   }
@@ -765,8 +760,7 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
       LOGE("Failed to read from socket_child: %s\n", strerror(errno));
 
     finalize_mns_fork:
-      if (close(socket_child) == -1)
-        LOGE("Failed to close socket_child: %s\n", strerror(errno));
+      close(socket_child);
 
       _exit(0);
   }

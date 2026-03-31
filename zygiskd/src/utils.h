@@ -10,7 +10,15 @@
 #define CONCAT_(x,y) x##y
 #define CONCAT(x,y) CONCAT_(x,y)
 
-#define LOG_TAG lp_select("zygiskd32", "zygiskd64")
+#ifdef __LP64__
+  #define LP_SELECT(a, b) b
+#else
+  #define LP_SELECT(a, b) a
+#endif
+
+#ifndef LOG_TAG
+  #define LOG_TAG "zygiskd" LP_SELECT("32", "64")
+#endif
 
 #define LOGI(...)                                              \
   __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__); \
@@ -24,46 +32,18 @@
   __android_log_print(ANDROID_LOG_ERROR , LOG_TAG, __VA_ARGS__); \
   printf(__VA_ARGS__)
 
-#define ASSURE_SIZE_WRITE(area_name, subarea_name, sent_size, expected_size)                                     \
+#define ASSURE_SIZE_WRITE(area_name, subarea_name, sent_size, expected_size, return_type)                        \
   if (sent_size != (ssize_t)(expected_size)) {                                                                   \
     LOGE("Failed to sent " subarea_name " in " area_name ": Expected %zu, got %zd\n", expected_size, sent_size); \
                                                                                                                  \
-    return;                                                                                                      \
+    return_type;                                                                                                 \
   }
 
-#define ASSURE_SIZE_READ(area_name, subarea_name, sent_size, expected_size)                                      \
+#define ASSURE_SIZE_READ(area_name, subarea_name, sent_size, expected_size, return_type)                         \
   if (sent_size != (ssize_t)(expected_size)) {                                                                   \
     LOGE("Failed to read " subarea_name " in " area_name ": Expected %zu, got %zd\n", expected_size, sent_size); \
                                                                                                                  \
-    return;                                                                                                      \
-  }
-
-#define ASSURE_SIZE_WRITE_BREAK(area_name, subarea_name, sent_size, expected_size)                               \
-  if (sent_size != (ssize_t)(expected_size)) {                                                                   \
-    LOGE("Failed to sent " subarea_name " in " area_name ": Expected %zu, got %zd\n", expected_size, sent_size); \
-                                                                                                                 \
-    break;                                                                                                       \
-  }
-
-#define ASSURE_SIZE_READ_BREAK(area_name, subarea_name, sent_size, expected_size)                                \
-  if (sent_size != (ssize_t)(expected_size)) {                                                                   \
-    LOGE("Failed to read " subarea_name " in " area_name ": Expected %zu, got %zd\n", expected_size, sent_size); \
-                                                                                                                 \
-    break;                                                                                                       \
-  }
-
-#define ASSURE_SIZE_WRITE_WR(area_name, subarea_name, sent_size, expected_size)                                  \
-  if (sent_size != (ssize_t)(expected_size)) {                                                                   \
-    LOGE("Failed to sent " subarea_name " in " area_name ": Expected %zu, got %zd\n", expected_size, sent_size); \
-                                                                                                                 \
-    return -1;                                                                                                   \
-  }
-
-#define ASSURE_SIZE_READ_WR(area_name, subarea_name, sent_size, expected_size)                                   \
-  if (sent_size != (ssize_t)(expected_size)) {                                                                   \
-    LOGE("Failed to read " subarea_name " in " area_name ": Expected %zu, got %zd\n", expected_size, sent_size); \
-                                                                                                                 \
-    return -1;                                                                                                   \
+    return_type;                                                                                                 \
   }
 
 #define IS_ISOLATED_SERVICE(uid)      \

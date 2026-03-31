@@ -1292,7 +1292,7 @@ static void hook_unloader(void) {
 
   lsplt_free_maps(map_infos);
 
-    /* INFO: Load modules early on (before system server fork) to spread through all Zygotes */
+  /* INFO: Load modules early on (before system server fork) to spread through all Zygotes */
   if (!modules_loaded) {
     if (!load_modules_only()) {
       LOGE("Failed to load modules in hook_unloader");

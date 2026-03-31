@@ -1,13 +1,14 @@
+#include <stdio.h>
+#include <string.h>
+#include <stdbool.h>
+#include <fcntl.h>
+#include <sys/syscall.h>
+
+#include <unistd.h>
 #include <linux/seccomp.h>
 #include <linux/filter.h>
 #include <linux/audit.h>
 #include <sys/prctl.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdbool.h>
-#include <string.h>
 
 #include "logging.h"
 

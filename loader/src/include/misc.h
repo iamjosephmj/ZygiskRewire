@@ -3,6 +3,12 @@
 
 #include <inttypes.h>
 
+#ifdef __LP64__
+  #define LP_SELECT(lp32, lp64) lp64
+#else
+  #define LP_SELECT(lp32, lp64) lp32
+#endif
+
 #define IS_ISOLATED_SERVICE(uid)      \
   ((uid) >= 90000 && (uid) < 1000000)
 

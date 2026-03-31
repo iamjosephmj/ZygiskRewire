@@ -15,6 +15,8 @@
 #include <unistd.h>
 #include <linux/un.h>
 
+#define LOG_TAG "zygisk-injector" LP_SELECT("32", "64")
+
 #include "utils.h"
 #include "misc.h"
 

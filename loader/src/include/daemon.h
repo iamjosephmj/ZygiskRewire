@@ -5,13 +5,7 @@
 
 #include <unistd.h>
 
-#ifdef __LP64__
-  #define LP_SELECT(lp32, lp64) lp64
-#else
-  #define LP_SELECT(lp32, lp64) lp32
-#endif
-
-#define SOCKET_FILE_NAME LP_SELECT("cp32", "cp64") ".sock"
+#include "misc.h"
 
 enum rezygiskd_actions {
   ZygoteInjected,

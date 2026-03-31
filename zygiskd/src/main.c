@@ -9,19 +9,13 @@
 
 #include "utils.h"
 
-int __android_log_print(int prio, const char *tag, const char *fmt, ...);
-
 int main(int argc, char *argv[]) {
-  #ifdef __LP64__
-    LOGI("Welcome to ReZygisk %s Zygiskd64!\n", ZKSU_VERSION);
-  #else
-    LOGI("Welcome to ReZygisk %s Zygiskd32!\n", ZKSU_VERSION);
-  #endif
+  LOGI("Welcome to ReZygiskd%s", LP_SELECT("32", "64"));
 
   if (argc > 1) {
     if (strcmp(argv[1], "companion") == 0) {
       if (argc < 3) {
-        LOGI("Usage: zygiskd companion <fd>\n");
+        LOGI("Usage: zygiskd companion <fd>");
 
         return 1;
       }
@@ -33,7 +27,7 @@ int main(int argc, char *argv[]) {
     }
 
     else if (strcmp(argv[1], "version") == 0) {
-      LOGI("ReZygisk Daemon %s\n", ZKSU_VERSION);
+      LOGI("ReZygisk Daemon %s", ZKSU_VERSION);
 
       return 0;
     }
@@ -47,20 +41,20 @@ int main(int argc, char *argv[]) {
       char impl_name[LONGEST_ROOT_IMPL_NAME];
       stringify_root_impl_name(impl, impl_name);
 
-      LOGI("Root implementation: %s\n", impl_name);
+      LOGI("Root implementation: %s", impl_name);
 
       return 0;
     }
 
     else {
-      LOGI("Usage: zygiskd [companion|version|root]\n");
+      LOGI("Usage: zygiskd [companion|version|root]");
 
       return 0;
     }
   }
 
   if (switch_mount_namespace(1) == false) {
-    LOGE("Failed to switch mount namespace\n");
+    LOGE("Failed to switch mount namespace");
 
     return 1;
   }

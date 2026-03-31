@@ -23,9 +23,9 @@ const char *magisk_managers[] = {
   "io.github.huskydg.magisk"
 };
 
-#define SBIN_MAGISK lp_select("/sbin/magisk32", "/sbin/magisk64")
+#define SBIN_MAGISK LP_SELECT("/sbin/magisk32", "/sbin/magisk64")
 #define BITLESS_SBIN_MAGISK "/sbin/magisk"
-#define DEBUG_RAMDISK_MAGISK lp_select("/debug_ramdisk/magisk32", "/debug_ramdisk/magisk64")
+#define DEBUG_RAMDISK_MAGISK LP_SELECT("/debug_ramdisk/magisk32", "/debug_ramdisk/magisk64")
 #define BITLESS_DEBUG_RAMDISK_MAGISK "/debug_ramdisk/magisk"
 
 static enum magisk_variants variant = MOfficial;
@@ -42,14 +42,7 @@ void magisk_get_existence(struct root_impl_state *state) {
   };
 
   for (size_t i = 0; i < sizeof(magisk_files) / sizeof(magisk_files[0]); i++) {
-    if (access(magisk_files[i], F_OK) != 0) {
-      if (errno != ENOENT) {
-        LOGE("Failed to access Magisk binary: %s\n", strerror(errno));
-      }
-      errno = 0;
-
-      continue;
-    }
+    if (access(magisk_files[i], F_OK) != 0) continue;
 
     strcpy(path_to_magisk, magisk_files[i]);
 
@@ -66,8 +59,7 @@ void magisk_get_existence(struct root_impl_state *state) {
 
   char magisk_info[128];
   if (!exec_command(magisk_info, sizeof(magisk_info), (const char *)path_to_magisk, argv)) {
-    LOGE("Failed to execute magisk binary: %s\n", strerror(errno));
-    errno = 0;
+    LOGE("Failed to execute magisk binary: %s", strerror(errno));
 
     state->state = Abnormal;
 
@@ -77,20 +69,19 @@ void magisk_get_existence(struct root_impl_state *state) {
   state->variant = (uint8_t)MOfficial;
 
   for (unsigned long i = 0; i < sizeof(supported_variants) / sizeof(supported_variants[0]); i++) {
-    if (strstr(magisk_info, supported_variants[i])) {
-      variant = (enum magisk_variants)(i + 1);
-      state->variant = (uint8_t)variant;
+    if (!strstr(magisk_info, supported_variants[i])) continue;
 
-      break;
-    }
+    variant = (enum magisk_variants)(i + 1);
+    state->variant = (uint8_t)variant;
+
+    break;
   }
 
   argv[1] = "-V";
 
   char magisk_version[32];
   if (!exec_command(magisk_version, sizeof(magisk_version), (const char *)path_to_magisk, argv)) {
-    LOGE("Failed to execute magisk binary: %s\n", strerror(errno));
-    errno = 0;
+    LOGE("Failed to execute magisk binary: %s", strerror(errno));
 
     state->state = Abnormal;
 
@@ -108,8 +99,7 @@ void magisk_get_existence(struct root_impl_state *state) {
 
   char sulist_enabled[32];
   if (!exec_command(sulist_enabled, sizeof(sulist_enabled), (const char *)path_to_magisk, argv)) {
-    LOGE("Failed to execute magisk binary: %s\n", strerror(errno));
-    errno = 0;
+    LOGE("Failed to execute magisk binary: %s", strerror(errno));
 
     state->state = Abnormal;
 
@@ -130,8 +120,7 @@ bool magisk_uid_granted_root(uid_t uid) {
 
   char result[32];
   if (!exec_command(result, sizeof(result), (const char *)path_to_magisk, argv)) {
-    LOGE("Failed to execute magisk binary: %s\n", strerror(errno));
-    errno = 0;
+    LOGE("Failed to execute magisk binary: %s", strerror(errno));
 
     return false;
   }
@@ -151,8 +140,7 @@ bool magisk_uid_should_umount(const char *const process) {
 
   char result[sizeof("1=1")];
   if (!exec_command(result, sizeof(result), (const char *)path_to_magisk, argv)) {
-    LOGE("Failed to execute magisk binary: %s\n", strerror(errno));
-    errno = 0;
+    LOGE("Failed to execute magisk binary: %s", strerror(errno));
 
     return false;
   }
@@ -165,8 +153,7 @@ bool magisk_uid_is_manager(uid_t uid) {
 
   char output[128];
   if (!exec_command(output, sizeof(output), (const char *)path_to_magisk, argv)) {
-    LOGE("Failed to execute magisk binary: %s\n", strerror(errno));
-    errno = 0;
+    LOGE("Failed to execute magisk binary: %s", strerror(errno));
 
     return false;
   }
@@ -177,13 +164,14 @@ bool magisk_uid_is_manager(uid_t uid) {
   else
     snprintf(stat_path, sizeof(stat_path), "/data/user_de/0/%s", output + strlen("value="));
 
-  struct stat s;
-  if (stat(stat_path, &s) == -1) {
-    LOGE("Failed to stat %s: %s\n", stat_path, strerror(errno));
-    errno = 0;
+  struct stat st;
+  if (stat(stat_path, &st) == -1) {
+    if (errno != ENOENT) {
+      LOGE("Failed to stat %s: %s", stat_path, strerror(errno));
+    }
 
     return false;
   }
 
-  return s.st_uid == uid;
+  return st.st_uid == uid;
 }

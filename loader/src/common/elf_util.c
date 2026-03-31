@@ -9,11 +9,7 @@
 
 #include <unistd.h>
 
-#ifdef __LP64__
-  #define LOG_TAG "zygisk-elfutil64"
-#else
-  #define LOG_TAG "zygisk-elfutil32"
-#endif
+#define LOG_TAG "zygisk-elfutil" LP_SELECT("32", "64")
 
 #include "logging.h"
 
@@ -623,11 +619,7 @@ ElfW(Addr) LinearLookup(ElfImg *img, const char *restrict name, unsigned char *s
 }
 
 ElfW(Addr) LinearLookupByPrefix(ElfImg *img, const char *prefix, unsigned char *sym_type) {
-  if (!_load_symtabs(img)) {
-    // LOGE("Failed to load symtabs for linear lookup by prefix of %s", prefix);
-
-    return 0;
-  }
+  if (!_load_symtabs(img)) return 0;
 
   size_t valid_symtabs_amount = calculate_valid_symtabs_amount(img);
   if (valid_symtabs_amount == 0) {
