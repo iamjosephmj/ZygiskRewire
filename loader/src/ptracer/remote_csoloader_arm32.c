@@ -740,6 +740,37 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
     return false;
   }
 
+  void *remote_path_zerod = calloc(1, ALIGN_UP(path_len, 16));
+  if (!remote_path_zerod) {
+    LOGE("Failed to allocate memory for zeroed path");
+
+    call_regs = regs_saved;
+    args[0] = remote_fd;
+    remote_syscall(pid, &call_regs, syscall_gadget, SYS_close, args, 1);
+
+    free(phdr);
+    close(fd);
+
+    return false;
+  }
+
+  if (write_proc(pid, remote_path, remote_path_zerod, ALIGN_UP(path_len, 16)) != (ssize_t)ALIGN_UP(path_len, 16)) {
+    LOGE("Failed to zero remote path string on stack");
+
+    free(remote_path_zerod);
+
+    call_regs = regs_saved;
+    args[0] = remote_fd;
+    remote_syscall(pid, &call_regs, syscall_gadget, SYS_close, args, 1);
+
+    free(phdr);
+    close(fd);
+
+    return false;
+  }
+
+  free(remote_path_zerod);
+
   struct {
     uint32_t addr;
     uint32_t len;
