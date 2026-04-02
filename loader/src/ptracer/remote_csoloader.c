@@ -17,13 +17,8 @@
 
 #include <sys/syscall.h>
 
-#ifndef SYS_mmap
-  #ifdef __NR_mmap
-    #define SYS_mmap __NR_mmap
-  #elif defined(__NR_mmap2)
-    #define SYS_mmap __NR_mmap2
-  #endif
-#endif
+#undef SYS_mmap
+#define SYS_mmap LP_SELECT(__NR_mmap2, __NR_mmap)
 
 #include "logging.h"
 #include "socket_utils.h"
@@ -44,14 +39,14 @@ static uintptr_t page_end(uintptr_t addr, size_t page_size) {
 }
 
 static long remote_mmap_offset_arg(off_t file_offset, size_t page_size) {
-  (void) page_size;
-
   /* INFO: mmap2 needs the offset in page units, unlike mmap */
-  #if defined(__NR_mmap2) && defined(SYS_mmap) && SYS_mmap == __NR_mmap2
+  #ifdef __LP64__
+    (void) page_size;
+
+    return file_offset;
+  #else
     return (long)(file_offset / (off_t)page_size);
   #endif
-
-  return (long)file_offset;
 }
 
 /* INFO: Parse ELF headers and compute the total mapping size for PT_LOAD segments. */

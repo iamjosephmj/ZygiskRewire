@@ -780,6 +780,7 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
   #elif defined(__x86_64__)
     /* rax = syscall number, rdi,rsi,rdx,r10,r8,r9 = args */
     regs->REG_SYSNR = sysnr;
+    regs->rax = sysnr;
     regs->rdi = 0;
     regs->rsi = 0;
     regs->rdx = 0;
@@ -797,6 +798,7 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
   #elif defined(__i386__)
     /* eax = syscall number, ebx,ecx,edx,esi,edi,ebp = args */
     regs->REG_SYSNR = sysnr;
+    regs->eax = sysnr;
     regs->ebx = 0;
     regs->ecx = 0;
     regs->edx = 0;

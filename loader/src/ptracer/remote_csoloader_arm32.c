@@ -54,17 +54,6 @@ static uint32_t page_end(uint32_t addr, uint32_t page_size) {
   return ALIGN_UP(addr, page_size);
 }
 
-static long remote_mmap_offset_arg(off_t file_offset, size_t page_size) {
-  (void) page_size;
-
-  /* INFO: mmap2 needs the offset in page units, unlike mmap */
-  #if defined(__NR_mmap2) && __NR_mmap == __NR_mmap2
-    return (long)(file_offset / (off_t)page_size);
-  #endif
-
-  return (long)file_offset;
-}
-
 static bool compute_load_layout(int fd, uint32_t page_size, Elf32_Ehdr *eh, Elf32_Phdr **out_phdr, Elf32_Addr *out_min_vaddr, uint32_t *out_map_size) {
   if (!read_loop_offset(fd, eh, sizeof(*eh), 0)) {
     LOGE("Failed to read ELF header");
@@ -803,7 +792,7 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
         args[2] = PROT_READ | PROT_WRITE;
         args[3] = MAP_FIXED | MAP_PRIVATE;
         args[4] = remote_fd;
-        args[5] = remote_mmap_offset_arg(file_page_offset, page_size);
+        args[5] = file_page_offset;
 
         call_regs = regs_saved;
         long seg_ret = remote_syscall(pid, &call_regs, syscall_gadget, __NR_mmap, args, 6);
@@ -880,7 +869,7 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
       args[2] = prot;
       args[3] = MAP_FIXED | MAP_PRIVATE;
       args[4] = remote_fd;
-      args[5] = remote_mmap_offset_arg(file_page_offset, page_size);
+      args[5] = file_page_offset;
 
       call_regs = regs_saved;
       long seg_ret = remote_syscall(pid, &call_regs, syscall_gadget, __NR_mmap, args, 6);
