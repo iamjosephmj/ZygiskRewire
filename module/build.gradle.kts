@@ -155,6 +155,8 @@ androidComponents.onVariants { variant ->
                     set.add(Pair(root.file("sepolicy.rule").asFile, null))
                     set.add(Pair(root.file("post-fs-data.sh").asFile, null))
                     set.add(Pair(root.file("service.sh").asFile, null))
+                    set.add(Pair(root.file("uninstall.sh").asFile, null))
+                    set.add(Pair(root.file("rezygisk.sh").asFile, null))
                     set.add(
                         Pair(
                             root.file("$pathSuffix/libzygisk.so").asFile,
