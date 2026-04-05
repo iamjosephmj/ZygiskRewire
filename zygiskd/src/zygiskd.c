@@ -339,11 +339,6 @@ void zygiskd_start(char *restrict argv[]) {
 
         break;
       }
-      case SystemServerStarted: {
-        unix_datagram_sendto(CONTROLLER_SOCKET, &(uint8_t){ SYSTEM_SERVER_STARTED }, sizeof(uint8_t));
-
-        break;
-      }
       case GetProcessFlags: {
         uint32_t uid = 0;
         ssize_t ret = read_uint32_t(client_fd, &uid);

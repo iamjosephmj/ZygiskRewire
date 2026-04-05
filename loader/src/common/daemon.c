@@ -316,19 +316,6 @@ void rezygiskd_zygote_restart() {
   close(fd);
 }
 
-void rezygiskd_system_server_started() {
-  int fd = rezygiskd_connect(1);
-  if (fd == -1) {
-    PLOGE("Failed to report system server started");
-
-    return;
-  }
-
-  safe_write(write_uint8_t(fd, (uint8_t)SystemServerStarted), "SystemServerStarted action", return);
-
-  close(fd);
-}
-
 bool rezygiskd_update_mns(enum mount_namespace_state nms_state, char *buf, size_t buf_size) {
   int fd = rezygiskd_connect(1);
   if (fd == -1) {

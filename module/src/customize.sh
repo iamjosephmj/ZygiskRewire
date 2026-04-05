@@ -97,9 +97,11 @@ extract "$ZIPFILE" 'module.prop'     "$MODPATH"
 extract "$ZIPFILE" 'post-fs-data.sh' "$MODPATH"
 extract "$ZIPFILE" 'service.sh'      "$MODPATH"
 extract "$ZIPFILE" 'uninstall.sh'    "$MODPATH"
+extract "$ZIPFILE" 'rezygisk.sh' "/data/adb/post-fs-data.d/"
 
 # INFO: KernelSU requires executable permissions for uninstall.sh. Yes, just that file.
 chmod +x "$MODPATH/uninstall.sh"
+chmod +x "/data/adb/post-fs-data.d/rezygisk.sh"
 
 mv "$TMPDIR/sepolicy.rule" "$MODPATH"
 

@@ -1091,7 +1091,6 @@ static void rz_nativeForkSystemServer_pre(struct zygisk_context *ctx) {
   if (!is_zygote_child(ctx)) return;
 
   rz_run_modules_pre(ctx);
-  rezygiskd_system_server_started();
 
   rz_sanitize_fds(ctx);
 }

@@ -22,7 +22,6 @@
 
 #include "monitor.h"
 
-#define PROP_PATH TMP_PATH "/module.prop"
 #define SOCKET_NAME "init_monitor"
 
 #define STOPPED_WITH(sig, event) WIFSTOPPED(sigchld_status) && (sigchld_status >> 8 == ((sig) | (event << 8)))
@@ -383,15 +382,6 @@ void rezygiskd_listener_callback() {
         LOGD("ReZygiskd%s error info: %s", cmd == DAEMON64_SET_ERROR_INFO ? "64" : "32", status->daemon_error_info);
 
         update_status(NULL);
-
-        break;
-      }
-      case SYSTEM_SERVER_STARTED: {
-        LOGD("system server started, mounting prop");
-
-        if (mount(PROP_PATH, "/data/adb/modules/rezygisk/module.prop", NULL, MS_BIND, NULL) == -1) {
-          PLOGE("Failed to mount module prop");
-        }
 
         break;
       }
@@ -823,7 +813,7 @@ static char post_section[1024];
   }
 
 static bool update_status(const char *message) {
-  FILE *prop = fopen(PROP_PATH, "w");
+  FILE *prop = fopen("/data/adb/modules/rezygisk/module.prop", "w");
   if (prop == NULL) {
     PLOGE("failed to open prop");
 
@@ -948,9 +938,6 @@ static bool update_status(const char *message) {
 }
 
 static bool prepare_environment() {
-  /* INFO: We need to create the file first, otherwise the mount will fail */
-  close(open(PROP_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0644));
-
   FILE *orig_prop = fopen("/data/adb/modules/rezygisk/module.prop", "r");
   if (orig_prop == NULL) {
     PLOGE("failed to open orig prop");

@@ -15,7 +15,6 @@ enum rezygiskd_actions {
   RequestCompanionSocket,
   GetModuleDir,
   ZygoteRestart,
-  SystemServerStarted,
   UpdateMountNamespace,
   RemoveModule
 };
@@ -69,8 +68,6 @@ int rezygiskd_connect_companion(size_t index);
 int rezygiskd_get_module_dir(size_t index);
 
 void rezygiskd_zygote_restart();
-
-void rezygiskd_system_server_started();
 
 bool rezygiskd_update_mns(enum mount_namespace_state nms_state, char *buf, size_t buf_size);
 

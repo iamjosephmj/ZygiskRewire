@@ -18,8 +18,7 @@ enum rezygiskd_command {
   DAEMON64_SET_INFO = 6,
   DAEMON32_SET_INFO = 7,
   DAEMON64_SET_ERROR_INFO = 8,
-  DAEMON32_SET_ERROR_INFO = 9,
-  SYSTEM_SERVER_STARTED = 10
+  DAEMON32_SET_ERROR_INFO = 9
 };
 
 int send_control_command(enum rezygiskd_command cmd);

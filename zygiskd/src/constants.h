@@ -10,7 +10,6 @@
 #define ZYGOTE_INJECTED LP_SELECT(5, 4)
 #define DAEMON_SET_INFO LP_SELECT(7, 6)
 #define DAEMON_SET_ERROR_INFO LP_SELECT(9, 8)
-#define SYSTEM_SERVER_STARTED 10
 
 enum DaemonSocketAction {
   ZygoteInjected         = 0,
@@ -20,9 +19,8 @@ enum DaemonSocketAction {
   RequestCompanionSocket = 4,
   GetModuleDir           = 5,
   ZygoteRestart          = 6,
-  SystemServerStarted    = 7,
-  UpdateMountNamespace   = 8,
-  RemoveModule           = 9
+  UpdateMountNamespace   = 7,
+  RemoveModule           = 8
 };
 
 enum ProcessFlags: uint32_t {
