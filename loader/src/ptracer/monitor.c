@@ -537,6 +537,26 @@ int sigchld_status;
 pid_t *sigchld_process;
 size_t sigchld_process_count = 0;
 
+static bool claim_init_tracer() {
+  if (ptrace(PTRACE_SEIZE, 1, 0, PTRACE_O_TRACEFORK) == -1) {
+    /* INFO: In cases where, for example, 2 ReZygisks were executed, the second
+               process won't be able to seize init due to limitations of ptrace.
+               In this case, we should just exit the second process to avoid
+               conflicts. */
+    if (errno == EPERM) {
+      LOGW("Another process is already tracing init");
+
+      update_status("❌ Multiple Zygisks functioning");
+    } else {
+      PLOGE("failed to seize init");
+    }
+
+    return false;
+  }
+
+  return true;
+}
+
 bool sigchld_listener_init() {
   sigchld_process = NULL;
 
@@ -556,8 +576,6 @@ bool sigchld_listener_init() {
 
     return false;
   }
-
-  ptrace(PTRACE_SEIZE, 1, 0, PTRACE_O_TRACEFORK);
 
   return true;
 }
@@ -970,6 +988,8 @@ void init_monitor() {
   LOGI("ReZygisk %s", ZKSU_VERSION);
 
   if (!prepare_environment()) exit(1);
+
+  if (!claim_init_tracer()) exit(1);
 
   monitor_events_init();
 
