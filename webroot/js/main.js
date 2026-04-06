@@ -101,9 +101,6 @@ async function getModuleNames(modules) {
     console.error('[rezygisk.js] Failed to retrieve ReZygisk module information:', catCmd.stderr)
 
     rezygisk_state.innerHTML = translations.page.home.status.notWorking
-    rezygisk_icon_state.innerHTML = '<img class="dimc" src="assets/cross.svg">'
-
-    rootCss.style.setProperty('--status-bar', '#766000')
 
     /* INFO: Hide zygote divs */
     zygote_divs.forEach((zygote_div) => {
@@ -128,9 +125,6 @@ async function getModuleNames(modules) {
     console.error('[rezygisk.js] Failed to retrieve ReZygisk state information:', stateCmd.stderr)
 
     rezygisk_state.innerHTML = translations.page.home.status.notWorking
-    rezygisk_icon_state.innerHTML = '<img class="dimc" src="assets/cross.svg">'
-
-    rootCss.style.setProperty('--status-bar', '#766000')
 
     /* INFO: Hide zygote divs */
     zygote_divs.forEach((zygote_div) => {
