@@ -322,6 +322,8 @@ DCL_HOOK_FUNC(int, pthread_attr_setstacksize, void *target, size_t size) {
   if (should_unmap_zygisk) {
     unhook_functions();
 
+    csoloader_deinit();
+
     if (!should_unmap_zygisk) {
       LOGW("Failed to unmap libzygisk.so, skipping munmap");
 
