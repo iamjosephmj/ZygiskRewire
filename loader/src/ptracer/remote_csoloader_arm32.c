@@ -5,12 +5,11 @@
 
 #ifdef __aarch64__
 
-#include <errno.h>
-#include <fcntl.h>
-#include <inttypes.h>
-#include <limits.h>
 #include <stdlib.h>
+#include <inttypes.h>
 #include <string.h>
+
+#include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -18,9 +17,7 @@
 #include <elf.h>
 
 #include "elf_util_32.h"
-#include "logging.h"
 #include "socket_utils.h"
-#include "utils.h"
 
 #ifndef ALIGN_DOWN
   #define ALIGN_DOWN(x, a) ((x) & ~((a)-1))

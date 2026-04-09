@@ -1,27 +1,21 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
-#include <inttypes.h>
-#include <ctype.h>
 #include <stddef.h>
 #include <string.h>
+#include <errno.h>
 
-#include <sys/sysmacros.h>
-#include <sys/ptrace.h>
-#include <sys/mman.h>
-#include <sys/time.h>
-#include <sys/wait.h>
-#include <sys/stat.h>
-#include <sys/auxv.h>
-#include <sys/uio.h>
-#include <signal.h>
-#include <dlfcn.h>
-#include <sched.h>
-#include <fcntl.h>
-#include <link.h>
-
-#include <unistd.h>
+#include <ctype.h>
+#include <inttypes.h>
 #include <linux/limits.h>
+
+#include <link.h>
+#include <signal.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/ptrace.h>
+#include <sys/sysmacros.h>
+#include <sys/uio.h>
+#include <sys/wait.h>
 
 #include "elf_util.h"
 #include "elf_util_32.h"
@@ -903,7 +897,7 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
 
       return ret;
     #endif
-  
+
     return ret;
 }
 
@@ -1010,4 +1004,3 @@ int get_program(int pid, char *buf, size_t size) {
 
   return 0;
 }
-
