@@ -480,6 +480,24 @@ static bool resolve_symbol_addr(int fd, const struct elf_dyn_info *info,
     }
   }
 
+  if (strcmp(name, "dlopen") == 0 || strcmp(name, "dlsym") == 0 || strcmp(name, "dlerror") == 0 || strcmp(name, "dl_iterate_phdr") == 0 || strcmp(name, "dlclose") == 0) {
+    const char *linker_dl_symbol = "__dl_dlopen";
+    if (strcmp(name, "dlsym") == 0) linker_dl_symbol = "__dl_dlsym";
+    else if (strcmp(name, "dlerror") == 0) linker_dl_symbol = "__dl_dlerror";
+    else if (strcmp(name, "dl_iterate_phdr") == 0) linker_dl_symbol = "__dl_dl_iterate_phdr";
+    else if (strcmp(name, "dlclose") == 0) linker_dl_symbol = "__dl_dlclose";
+
+    LOGD("Trying to resolve %s from main executable as: %s", name, linker_dl_symbol);
+
+    /* INFO: Special-case dlsym since some old devices don't have libdl.so loaded to resolve it from. */
+    void *addr = find_func_addr(local_map, remote_map, "/system/bin/" LP_SELECT("linker", "linker64"), linker_dl_symbol);
+    if (addr) {
+      *out_addr = (uintptr_t)addr;
+
+      return true;
+    }
+  }
+
   LOGE("Failed to resolve external symbol %s", name);
 
   return false;
