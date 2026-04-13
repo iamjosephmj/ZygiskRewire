@@ -87,6 +87,16 @@ static void load_modules(struct Context *restrict context) {
     if (tmp_modules == NULL) {
       LOGE("Failed reallocating memory for modules.");
 
+      close(lib_fd);
+
+      for (size_t i = 0; i < context->len; i++) {
+        free(context->modules[i].name);
+        if (context->modules[i].companion >= 0) close(context->modules[i].companion);
+      }
+
+      free(context->modules);
+      context->modules = NULL;
+
       return;
     }
     context->modules = tmp_modules;
@@ -110,6 +120,7 @@ static void free_modules(struct Context *restrict context) {
   for (size_t i = 0; i < context->len; i++) {
     free(context->modules[i].name);
     if (context->modules[i].companion >= 0) close(context->modules[i].companion);
+    if (context->modules[i].lib_fd >= 0) close(context->modules[i].lib_fd);
   }
 
   free(context->modules);
@@ -139,9 +150,9 @@ static int spawn_companion(char *restrict argv[], char *restrict name, int lib_f
     close(companion_fd);
     close(daemon_fd);
 
-    exit(1);
+    return -1;
   }
-
+  
   if (pid > 0) {
     close(companion_fd);
 
@@ -184,10 +195,16 @@ static int spawn_companion(char *restrict argv[], char *restrict name, int lib_f
 
     switch (response) {
       /* INFO: Even without any entry, we should still just deal with it */
-      case 0: { return -2; }
+      case 0: {
+        close(daemon_fd);
+
+        return -2;
+      }
       case 1: { return daemon_fd; }
       /* TODO: Should we be closing daemon socket here? (in non-0-and-1 case) */
       default: {
+        close(daemon_fd);
+
         return -1;
       }
     }

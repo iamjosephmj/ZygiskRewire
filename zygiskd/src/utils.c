@@ -410,6 +410,8 @@ int non_blocking_execv(const char *restrict file, char *const argv[]) {
     close(link[1]);
 
     execv(file, argv);
+
+    _exit(1);
   } else {
     close(link[1]);
 
@@ -698,11 +700,11 @@ bool umount_root(struct root_impl impl) {
 }
 
 int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl impl) {
-  static int clean_namespace_fd = 0;
-  static int mounted_namespace_fd = 0;
+  static int clean_namespace_fd = -1;
+  static int mounted_namespace_fd = -1;
 
-  if (mns_state == Clean && clean_namespace_fd != 0) return clean_namespace_fd;
-  if (mns_state == Mounted && mounted_namespace_fd != 0) return mounted_namespace_fd;
+  if (mns_state == Clean && clean_namespace_fd != -1) return clean_namespace_fd;
+  if (mns_state == Mounted && mounted_namespace_fd != -1) return mounted_namespace_fd;
 
   int sockets[2];
   if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == -1) {

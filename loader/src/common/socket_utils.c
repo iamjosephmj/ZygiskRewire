@@ -17,6 +17,8 @@ ssize_t write_loop(int fd, const void *buf, size_t count) {
       if (errno == EINTR || errno == EAGAIN) continue;
 
       PLOGE("write");
+
+      return -1;
     }
 
     if (ret == 0) {
