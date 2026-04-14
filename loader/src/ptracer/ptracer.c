@@ -83,7 +83,11 @@ static bool inject_tango(int pid, const char *lib_path, uint32_t libc_init_targe
     /* INFO: Data for the code above (lib_base, lib_size, lib_entry) */
     lib_base,
     lib_size,
-    lib_entry | 1,
+    /* INFO: add | 1 would make it enter thumb mode */
+    lib_entry,
+    #if 0
+      lib_entry | 1,
+    #endif
     0,          /* INFO: Placeholder for the stub's later use */
   };
 
