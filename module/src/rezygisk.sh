@@ -1,5 +1,7 @@
 #!/system/bin/sh
 
+set -e
+
 # INFO: This script gets moved to /data/adb/post-fs-data.d/rezygisk.sh
 
 # INFO: This script is utilized so that when ReZygisk is disabled, it still can clean up its
@@ -9,3 +11,5 @@ MODDIR=/data/adb/modules/rezygisk
 
 # INFO: Removes the [...] in description part of module.prop
 sed -i -E 's/(description=)\[.*\] /\1/' $MODDIR/module.prop
+
+exit 0

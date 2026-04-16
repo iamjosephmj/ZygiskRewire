@@ -1,5 +1,7 @@
 #!/system/bin/sh
 
+set -e
+
 MODDIR=${0%/*}
 if [ "$ZYGISK_ENABLED" ]; then
   exit 0
@@ -27,7 +29,7 @@ create_sys_perm() {
 }
 
 export TMP_PATH=/data/adb/rezygisk
-rm -rf $TMP_PATH
+rm -rf "$TMP_PATH"
 
 create_sys_perm $TMP_PATH
 
@@ -52,3 +54,5 @@ else
 
   ./bin/zygisk-ptrace32 monitor &
 fi
+
+exit 0

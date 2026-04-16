@@ -342,12 +342,14 @@ uintptr_t remote_call(int pid, struct user_regs_struct *regs, uintptr_t func_add
       long remain = (args_size - 6L) * sizeof(long);
       align_stack(regs, remain);
 
-      if (!write_proc(pid, (uintptr_t) regs->REG_SP, &args[6], remain)) LOGE("failed to push arguments");
+      if (write_proc(pid, (uintptr_t) regs->REG_SP, &args[6], remain) != remain)
+        LOGE("failed to push arguments");
     }
 
     regs->REG_SP -= sizeof(long);
 
-    if (!write_proc(pid, (uintptr_t) regs->REG_SP, &return_addr, sizeof(return_addr))) LOGE("failed to write return addr");
+    if (write_proc(pid, (uintptr_t) regs->REG_SP, &return_addr, sizeof(return_addr)) != sizeof(return_addr))
+      LOGE("failed to write return addr");
 
     regs->REG_IP = func_addr;
   #elif defined(__i386__)
@@ -355,12 +357,14 @@ uintptr_t remote_call(int pid, struct user_regs_struct *regs, uintptr_t func_add
       long remain = (args_size) * sizeof(long);
       align_stack(regs, remain);
 
-      if (!write_proc(pid, (uintptr_t) regs->REG_SP, args, remain)) LOGE("failed to push arguments");
+      if (write_proc(pid, (uintptr_t) regs->REG_SP, args, remain) != remain)
+        LOGE("failed to push arguments");
     }
 
     regs->REG_SP -= sizeof(long);
 
-    if (!write_proc(pid, (uintptr_t) regs->REG_SP, &return_addr, sizeof(return_addr))) LOGE("failed to write return addr");
+    if (write_proc(pid, (uintptr_t) regs->REG_SP, &return_addr, sizeof(return_addr)) != sizeof(return_addr))
+      LOGE("failed to write return addr");
 
     regs->REG_IP = func_addr;
   #elif defined(__aarch64__)
@@ -818,9 +822,16 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
 
   long ret = -1;
 
-  #if defined(__aarch64__)
-    struct user_regs_struct saved_regs = *regs;
+  /* Save tracee's current register state (all architectures) */
+  struct user_regs_struct saved_regs;
+  if (!get_regs(pid, &saved_regs)) {
+    LOGE("Failed to get regs for save");
 
+    return -1;
+  }
+
+  /* Use *regs as scratch for syscall setup */
+  #if defined(__aarch64__)
     /* x8 = syscall number, x0-x5 = args */
     regs->regs[8] = sysnr;
     for (size_t i = 0; i < 6; i++) {
@@ -892,7 +903,7 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
   if (!set_regs(pid, regs)) {
     LOGE("Failed to set regs for syscall");
 
-    return -1;
+    goto restore_regs;
   }
 
   /* INFO: We must perform this code twice. The first time is to step into the syscall entry,
@@ -924,10 +935,8 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
   LOGV("Remote syscall %ld succeeded: %ld", sysnr, ret);
 
   restore_regs:
-    #ifdef __aarch64__
-      *regs = saved_regs;
-      if (!set_regs(pid, regs)) LOGE("Failed to restore regs after syscall error");
-    #endif
+    *regs = saved_regs;
+    if (!set_regs(pid, regs)) LOGE("Failed to restore regs after syscall");
 
     return ret;
 }
@@ -1024,11 +1033,16 @@ int get_program(int pid, char *buf, size_t size) {
   snprintf(path, sizeof(path), "/proc/%d/exe", pid);
 
   ssize_t sz = readlink(path, buf, size);
-
   if (sz == -1) {
     PLOGE("readlink /proc/%d/exe", pid);
 
     return -1;
+  }
+
+  if ((size_t)sz >= size) {
+    LOGW("Program path truncated (%zd >= %zu)", sz, size);
+
+    sz = size - 1;
   }
 
   buf[sz] = '\0';

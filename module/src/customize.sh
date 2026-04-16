@@ -1,6 +1,8 @@
 # shellcheck disable=SC2034
 SKIPUNZIP=1
 
+set -e
+
 DEBUG=@DEBUG@
 MIN_KSU_VERSION=@MIN_KSU_VERSION@
 MIN_KSUD_VERSION=@MIN_KSUD_VERSION@
@@ -217,3 +219,5 @@ if [ "$HUAWEI_MAPLE_ENABLED" == "1" ]; then
   ui_print "- Add ro.maple.enable=0"
   echo "ro.maple.enable=0" >>"$MODPATH/system.prop"
 fi
+
+exit 0

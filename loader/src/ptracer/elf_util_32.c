@@ -74,15 +74,18 @@ static size_t calculate_valid_symtabs_amount(struct elf_32 *img) {
     return 0;
   }
 
-  char *symtab_strings = offsetOf_char(img->header, img->symstr_offset_for_symtab);
+  Elf32_Shdr *symtab_str_shdr = NULL;
+  if (img->symtab && img->section_header && img->symtab->sh_link < img->header->e_shnum)
+    symtab_str_shdr = img->section_header + img->symtab->sh_link;
 
   for (Elf32_Off i = 0; i < img->symtab_count; i++) {
-    const char *sym_name = symtab_strings + img->symtab_start[i].st_name;
-    if (!sym_name)
+    if (symtab_str_shdr && img->symtab_start[i].st_name >= symtab_str_shdr->sh_size) {
+      LOGW("Symbol %zu has invalid name offset %u (>= %zu), skipping", (size_t)i, img->symtab_start[i].st_name, (size_t)symtab_str_shdr->sh_size);
+
       continue;
+    }
 
-    unsigned int st_type = ELF32_ST_TYPE(img->symtab_start[i].st_info);
-
+    unsigned int st_type = ELF_ST_TYPE(img->symtab_start[i].st_info);
     if ((st_type == STT_FUNC || st_type == STT_OBJECT) && img->symtab_start[i].st_size > 0 && img->symtab_start[i].st_name != 0)
       count++;
   }

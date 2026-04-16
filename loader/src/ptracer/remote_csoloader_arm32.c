@@ -655,14 +655,12 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
   args[4] = -1;
   args[5] = 0;
 
-  struct user_regs_struct call_regs = regs_saved;
-  uintptr_t remote_base_64 = (uintptr_t)remote_syscall(pid, &call_regs, syscall_gadget, __NR_mmap, args, 6);
+  uintptr_t remote_base_64 = (uintptr_t)remote_syscall(pid, regs, syscall_gadget, __NR_mmap, args, 6);
   if (!remote_base_64 || remote_base_64 == (uintptr_t)MAP_FAILED) {
     LOGW("MAP_FIXED_NOREPLACE at 0x%x failed, trying hint-only", gap_addr);
 
     args[3] = MAP_PRIVATE | MAP_ANONYMOUS;
-    call_regs = regs_saved;
-    remote_base_64 = (uintptr_t)remote_syscall(pid, &call_regs, syscall_gadget, __NR_mmap, args, 6);
+    remote_base_64 = (uintptr_t)remote_syscall(pid, regs, syscall_gadget, __NR_mmap, args, 6);
   }
 
   if (!remote_base_64 || remote_base_64 == (uintptr_t)MAP_FAILED) {
@@ -677,10 +675,9 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
   if (remote_base_64 >= 0x100000000ULL) {
     LOGE("remote mmap returned 64-bit addr 0x%" PRIxPTR, remote_base_64);
 
-    call_regs = regs_saved;
     args[0] = (long)remote_base_64;
     args[1] = (long)map_size;
-    remote_syscall(pid, &call_regs, syscall_gadget, __NR_munmap, args, 2);
+    remote_syscall(pid, regs, syscall_gadget, __NR_munmap, args, 2);
 
     free(phdr);
     close(fd);
@@ -702,23 +699,21 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
     return false;
   }
 
-  call_regs = regs_saved;
   args[0] = AT_FDCWD;
   args[1] = (long)remote_path;
   args[2] = O_RDONLY | O_CLOEXEC;
   args[3] = 0;
 
   /* INFO: Ensure remote_call's own stack usage stays below our string */
-  call_regs.REG_SP = remote_path;
+  regs->REG_SP = remote_path;
 
-  long remote_fd = remote_syscall(pid, &call_regs, syscall_gadget, __NR_openat, args, 4);
+  long remote_fd = remote_syscall(pid, regs, syscall_gadget, __NR_openat, args, 4);
   if (remote_fd < 0) {
     LOGE("Failed to open remote file: %s (%ld)", lib_path, remote_fd);
 
-    call_regs = regs_saved;
     args[0] = (long)remote_base;
     args[1] = (long)map_size;
-    remote_syscall(pid, &call_regs, syscall_gadget, __NR_munmap, args, 2);
+    remote_syscall(pid, regs, syscall_gadget, __NR_munmap, args, 2);
 
     free(phdr);
     close(fd);
@@ -730,9 +725,8 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
   if (!remote_path_zerod) {
     LOGE("Failed to allocate memory for zeroed path");
 
-    call_regs = regs_saved;
     args[0] = remote_fd;
-    remote_syscall(pid, &call_regs, syscall_gadget, SYS_close, args, 1);
+    remote_syscall(pid, regs, syscall_gadget, SYS_close, args, 1);
 
     free(phdr);
     close(fd);
@@ -745,9 +739,8 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
 
     free(remote_path_zerod);
 
-    call_regs = regs_saved;
     args[0] = remote_fd;
-    remote_syscall(pid, &call_regs, syscall_gadget, SYS_close, args, 1);
+    remote_syscall(pid, regs, syscall_gadget, SYS_close, args, 1);
 
     free(phdr);
     close(fd);
@@ -791,14 +784,12 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
         args[4] = remote_fd;
         args[5] = file_page_offset;
 
-        call_regs = regs_saved;
-        long seg_ret = remote_syscall(pid, &call_regs, syscall_gadget, __NR_mmap, args, 6);
+        long seg_ret = remote_syscall(pid, regs, syscall_gadget, __NR_mmap, args, 6);
         if (seg_ret < 0) {
           LOGE("remote mmap writable file-backed segment failed for phdr %d", i);
 
-          call_regs = regs_saved;
           args[0] = remote_fd;
-          remote_syscall(pid, &call_regs, syscall_gadget, __NR_close, args, 1);
+          remote_syscall(pid, regs, syscall_gadget, __NR_close, args, 1);
 
           free(phdr);
           close(fd);
@@ -813,9 +804,8 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
             LOGE("Failed to zero tail for phdr %d", i);
 
             free(zeros);
-            call_regs = regs_saved;
             args[0] = remote_fd;
-            remote_syscall(pid, &call_regs, syscall_gadget, __NR_close, args, 1);
+            remote_syscall(pid, regs, syscall_gadget, __NR_close, args, 1);
 
             free(phdr);
             close(fd);
@@ -835,14 +825,12 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
         args[4] = -1;
         args[5] = 0;
 
-        call_regs = regs_saved;
-        long bss_ret = remote_syscall(pid, &call_regs, syscall_gadget, __NR_mmap, args, 6);
+        long bss_ret = remote_syscall(pid, regs, syscall_gadget, __NR_mmap, args, 6);
         if (bss_ret < 0) {
           LOGE("remote mmap bss segment failed for phdr %d", i);
 
-          call_regs = regs_saved;
           args[0] = remote_fd;
-          remote_syscall(pid, &call_regs, syscall_gadget, __NR_close, args, 1);
+          remote_syscall(pid, regs, syscall_gadget, __NR_close, args, 1);
 
           free(phdr);
           close(fd);
@@ -868,14 +856,12 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
       args[4] = remote_fd;
       args[5] = file_page_offset;
 
-      call_regs = regs_saved;
-      long seg_ret = remote_syscall(pid, &call_regs, syscall_gadget, __NR_mmap, args, 6);
+      long seg_ret = remote_syscall(pid, regs, syscall_gadget, __NR_mmap, args, 6);
       if (seg_ret < 0) {
         LOGE("remote mmap file-backed segment failed for phdr %d", i);
 
-        call_regs = regs_saved;
         args[0] = remote_fd;
-        remote_syscall(pid, &call_regs, syscall_gadget, __NR_close, args, 1);
+        remote_syscall(pid, regs, syscall_gadget, __NR_close, args, 1);
 
         free(phdr);
         close(fd);
@@ -897,9 +883,8 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
     }
   }
 
-  call_regs = regs_saved;
   args[0] = remote_fd;
-  remote_syscall(pid, &call_regs, syscall_gadget, __NR_close, args, 1);
+  remote_syscall(pid, regs, syscall_gadget, __NR_close, args, 1);
 
   struct elf_dyn_info dinfo;
   if (!elf_load_dyn_info(fd, &eh, phdr, &dinfo)) {
@@ -945,21 +930,19 @@ bool arm32_csoloader_load(int pid, struct user_regs_struct *regs,
   }
 
   for (size_t i = 0; i < segs_count; i++) {
-    call_regs = regs_saved;
 
     args[0] = (long)segs[i].addr;
     args[1] = (long)segs[i].len;
     args[2] = segs[i].final_prot;
 
-    long mp_ret = remote_syscall(pid, &call_regs, syscall_gadget, __NR_mprotect, args, 3);
+    long mp_ret = remote_syscall(pid, regs, syscall_gadget, __NR_mprotect, args, 3);
     if (mp_ret < 0) {
       LOGE("Failed to set final protections for segment at 0x%u: %ld", segs[i].addr, mp_ret);
 
-      call_regs = regs_saved;
 
       args[0] = (long)remote_base;
       args[1] = (long)map_size;
-      remote_syscall(pid, &call_regs, syscall_gadget, __NR_munmap, args, 2);
+      remote_syscall(pid, regs, syscall_gadget, __NR_munmap, args, 2);
 
       free((void *)needed_paths);
       elf_dyn_info_destroy(&dinfo);
