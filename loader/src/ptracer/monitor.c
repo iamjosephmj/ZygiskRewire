@@ -510,7 +510,7 @@ static bool ensure_daemon_created(bool is_64bit) {
 
 #define PRE_INJECT_TANGO                                           \
   if (strcmp(program, "/system_ext/bin/tango_translator") == 0) {  \
-    tracer = "./bin/zygisk-ptrace64";                              \
+    tracer = "./bin/zygisk-ptrace32";                              \
     is_tango = true;                                               \
                                                                    \
     if (should_stop_inject32()) {                                  \

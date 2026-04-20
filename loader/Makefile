@@ -30,10 +30,8 @@ COMMON_SRCS = src/common/daemon.c src/common/elf_util.c src/common/ifunc_shim.c 
 			  src/common/misc.c src/common/socket_utils.c
 INJECTOR_SRCS = src/injector/cpp_strings.c src/injector/entry.c \
 				src/injector/hook.c src/injector/ptrace_clear.c
-PTRACER_SRCS = src/ptracer/elf_util_32.c src/ptracer/main.c                        \
-			   src/ptracer/monitor.c src/ptracer/ptracer.c                         \
-			   src/ptracer/remote_csoloader.c src/ptracer/remote_csoloader_arm32.c \
-			   src/ptracer/utils.c
+PTRACER_SRCS = src/ptracer/main.c src/ptracer/monitor.c src/ptracer/ptracer.c \
+			   src/ptracer/remote_csoloader.c src/ptracer/utils.c
 
 COMMON_OBJS = $(patsubst src/common/%.c,$(OBJ_DIR)/common/%.o,$(COMMON_SRCS))
 INJECTOR_OBJS = $(patsubst src/injector/%.c,$(OBJ_DIR)/injector/%.o,$(INJECTOR_SRCS))
