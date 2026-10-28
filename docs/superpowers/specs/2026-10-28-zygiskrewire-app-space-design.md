@@ -1,138 +1,200 @@
 # ZygiskRewire: App-Space Payload Architecture
 
-Date: 2026-10-28
+Date: 2026-10-28 (rev 2 — revised after full codebase investigation)
 Status: Draft for review
 Base: Fork of PerformanC/ReZygisk @ b5aa415 (GPL-3.0)
+Investigation basis: three code audits (boot flow, artifact inventory, injection mechanics) of the
+unmodified tree; all file:line references below are verified against b5aa415.
 
 ## Problem
 
-ReZygisk is easy to detect because every runtime artifact advertises itself:
+ReZygisk is trivially detectable because every runtime artifact advertises itself. Verified inventory:
 
-- The daemon runs from `/data/adb/rezygisk/bin/zygiskd` (process names `ReZygiskd64`/`ReZygiskd32`, ptracers `zygisk-ptrace`).
-- The injected library is `/data/adb/rezygisk/lib/libzygisk.so`, opened by path inside every hooked app process, so the path appears in `/proc/<pid>/maps`.
-- Unix sockets are created under `rezygiskd`-derived paths (`init_monitor`, `TMP_PATH` socket files), visible in `/proc/net/unix`.
-- Log strings and `module.prop` literally say "Zygisk"/"ReZygisk".
-
-A detector only needs to list `/data/adb` or grep maps for known names.
+| Surface | Artifacts today |
+|---|---|
+| `/proc/1/status` | `TracerPid:` permanently points at the monitor (it `PTRACE_SEIZE`s init, `monitor.c:562-580`) |
+| `/proc/*/cmdline` | `./bin/zygisk-ptrace64 monitor`, `./bin/zygiskd64`, `zygisk-ptraceNN trace <pid>`, companions `zygiskd64-<module>` (`monitor.c:446-477, 752-786`; `zygiskd.c:256-273`) |
+| `/proc/<pid>/maps` in zygote + every app | file-backed `/data/adb/modules/rezygisk/lib[64]/libzygisk.so` (remote `openat` at `remote_csoloader.c:734-762`, mapped at `851-1002`); module `.so` paths |
+| `/proc/net/unix` + filesystem | `/data/adb/rezygisk/init_monitor`, `/data/adb/rezygisk/cp{32,64}.sock` (`daemon.h:44`; `zygiskd.c:43-44`) |
+| `/data/adb` | module dir `rezygisk` with `bin/zygiskd{32,64}`, `bin/zygisk-ptrace{32,64}`, `lib[64]/libzygisk.so`, `machikado.*` signature blobs, `state.json`, runtime-rewritten `module.prop` containing "ReZygisk" (`monitor.c:826-885`) |
+| SELinux live policy | type `zygisk_file` (`sepolicy.rule`), label `u:object_r:zygisk_file:s0` on sockets (`utils.c:208`) |
+| logcat | tags `zygisk-core`, `zygiskd64`, `zygisk-ptrace64`, `zygisk-injector64`, `zygisk-elfutil64`, `zygisk-sh`; "ReZygisk"/"Zygisk" throughout message strings |
+| Manager app env | `ZYGISK_ENABLED=1` set in the root-manager process (`hook.c:1110`) |
+| Embedded strings | `ZKSU_VERSION` build fingerprint in every binary; `updateJson` URL in `module.prop` |
 
 ## Goal
 
-Runtime identity moves out of `/data/adb` and into ordinary app space:
+1. Everything that executes is extracted from the ZygiskRewire manager app (a normal installed APK);
+   no ELF persists under `/data/adb` after the bootstrap moment.
+2. No Zygisk-derived name, path, tag, or string exists anywhere inspectable at runtime
+   (cmdline, maps, `/proc/net/unix`, logcat, `/data/adb`, SELinux policy, embedded strings).
+3. Identity is randomized per build: observing one build reveals nothing about the next.
+4. Zygisk module API stays compatible (modules load, companions work, `ZYGISK_ENABLED` kept).
 
-1. Everything that executes comes from the ZygiskRewire manager app (a normal installed app), not from the root module directory.
-2. No Zygisk-derived name, path, or string exists at runtime in any inspectable place (`/proc/*/maps`, `/proc/*/cmdline`, `/proc/net/unix`, `/data/adb`, logcat).
-3. Identity is randomized per build, so observing one build reveals nothing about the next.
+## Non-Goals (known residuals, explicitly accepted for phase 1)
 
-## Non-Goals
+- **`TracerPid` of init.** The ptrace-init architecture requires the monitor to hold pid 1; the
+  tracer pid remains visible in `/proc/1/status`. Phase 1 mitigation: the tracer process has a
+  neutral random name and no identifying maps. Eliminating the attachment itself is a phase-2
+  architecture question, not a rename.
+- **Behavioral detection**: PLT/GOT entries in `libandroid_runtime.so` pointing into anonymous
+  executable memory; the extra seccomp filter on kernels < 5.10; ART internals probing. Unchanged
+  from ReZygisk today.
+- **SELinux rule semantics**: `allow zygote ... execmem` and the `/data`-access rules are behaviorally
+  fingerprintable regardless of naming. Only the type/label *names* are randomized.
+- **Play Integrity / hardware attestation**, server-side checks.
+- **Other modules' own names**: a companion's argv0 embeds the *module's* name; module dirs under
+  `/data/adb/modules/<their-name>/zygisk/` belong to those modules. We neutralize our own names only.
 
-- Hiding from behavioral detectors (PLT-hook scanning, unexpected executable pages). ReZygisk's existing custom-linker strategy remains the answer there; this design removes name/path fingerprints only.
-- Defeating Play Integrity hardware attestation or any Google-side server check.
-- Compatibility with unmodified Zygisk modules by name (module API compatibility is preserved; only naming changes).
+## Verified architecture facts the design builds on
+
+- The monitor (`zygisk-ptraceNN monitor`) is started by `post-fs-data.sh` and must start **before
+  zygote** (it seizes init at `monitor.c:562-580`; late start = permanent failure). Injection
+  catches zygote at `PTRACE_EVENT_EXEC` of `app_processNN`.
+- The daemon is spawned **lazily by the monitor** at first zygote exec via `execl("./bin/zygiskd64")`
+  relative to the monitor's cwd (`monitor.c:446-477`); the tracer is likewise re-exec'd per zygote
+  restart (`monitor.c:752-786`). The monitor therefore needs its binaries available (or open) for the
+  whole boot session — "extract, exec, delete" does **not** work for the monitor itself.
+- All paths are compile-time string literals in C (`daemon.h:44`, `ptracer.c:184`, `zygiskd.c:41-46`);
+  the `TMP_PATH` env var is never read. Renaming = build-system defines, no runtime discovery needed.
+- The remote loader applies all relocations externally from the tracer, has no lazy binding, no TLS
+  (`PT_TLS` never referenced), and resolves DT_NEEDED only from already-mapped system libs
+  (`remote_csoloader.c:439-504, 1019-1040`). **Nothing requires file-backed pages** — path-free
+  anonymous mapping is a localized change.
+- At post-fs-data there is no `pm`/`system_server`. The installed APK **is** reachable by filesystem
+  glob (`/data/app/*<pkg>*/base.apk`): userdata is mounted, paths are stable per install (change on
+  app update). The daemon itself resolves packages by filesystem for the same reason
+  (`root_impl/common.c:110-146`).
+- `loader/src/external/csoloader` and `plti` are git submodules, not checked out. They must be
+  checked out and audited before implementation (module-`.so` mapping method is inside CSOLoader).
 
 ## Architecture
 
-Three components, per approach A as approved:
-
 ```
-+----------------------------------------------------------+
-| ZygiskRewire app (normal installed APK)                   |
-|  - payload: daemon + loader .so as obfuscated assets      |
-|  - manager UI: status, logs, module webroot               |
-+----------------------------------------------------------+
-          |  read at boot by root script (unzip assets)
-          v
-+----------------------------------------------------------+
-| /data/adb/modules/<R>/  (R = random neutral module id)    |
-|  - module.prop (neutral name/description)                 |
-|  - post-fs-data.sh, service.sh: tiny bootstrap scripts    |
-|  - NO binaries stored here                                |
-+----------------------------------------------------------+
-          |  extract to tmpfs, exec, delete
-          v
-+----------------------------------------------------------+
-| /dev/.<R>/  (tmpfs, wiped on reboot, deleted after exec)  |
-|  - daemon binary, loader .so, random neutral filenames    |
-+----------------------------------------------------------+
-          |  daemon (neutral argv[0]) + loader injected
-          v
-     app processes: maps show no file path (anonymous copy)
++-----------------------------------------------------------+
+| ZygiskRewire app (normal installed APK, tech.thessemaj.zygiskrewire) |
+|  payload: daemon, ptracer, loader .so as obfuscated assets |
+|  manager UI: status/control over randomized socket         |
++-----------------------------------------------------------+
+        |  post-fs-data.sh (stub, random module id R):
+        |    glob APK -> unzip assets -> decode -> /dev/.<R>/ (tmpfs)
+        v
++-----------------------------------------------------------+
+| /dev/.<R>/  tmpfs, random name per boot, random file names |
+|  monitor opens all binaries, keeps fds, execs itself        |
+|  last: daemon+tracer binaries deleted (monitor re-execs     |
+|  them via /proc/self/fd/<n>), dir removed                   |
++-----------------------------------------------------------+
+        |  monitor (neutral argv0, fds to binaries kept)
+        v
+     init seized -> zygote exec observed -> daemon spawned via fd,
+     loader mapped into zygote anonymously (no path in maps)
 ```
 
 ### 1. Build-time identity randomization
 
-A new Make target step generates `identity.mk` per build:
+`make release` generates `identity.mk` (gitignored) and passes everything as `-D` defines:
 
-- Module id/name: random neutral string (e.g. `syscfg-e4b9…`).
-- Daemon binary name, ptracer binary name, loader `.so` name: random (e.g. `libwgf.so`, `netd2`, `rmt_storage_b`).
-- Socket file/abstract names: random.
-- Process argv[0] values: neutral system-ish names.
-
-All names flow into the C sources through `-D` compile definitions (replacing today's hardcoded `zygiskd`, `zygisk-ptrace`, `libzygisk.so`, `init_monitor`, `TMP_PATH` socket names). One `make release` produces one coherent identity; the next build is different.
+- Module id: random neutral (`syscfg-<hex>`); daemon/ptracer/loader/socket/state file names: random.
+- Log tags: neutral (e.g. `<rand>-core64`), all "ReZygisk"/"Zygisk" message strings rewritten.
+- ELF soname of the loader (`-Wl,-soname,libzygisk.so` today), `ZKSU_VERSION` neutralized.
+- SELinux type/label: `zygisk_file` -> `<rand>_file` (in `sepolicy.rule` + `utils.c:208`).
+- The app build consumes the same `identity.mk` so APK asset names and the module stub agree.
 
 ### 2. Module stub (`/data/adb/modules/<R>/`)
 
-Kept (the module framework requires it for boot execution) but reduced to:
-
-- `module.prop` with the randomized neutral name.
-- `post-fs-data.sh` / `service.sh` doing exactly one thing: locate the installed ZygiskRewire APK, extract payload assets to `/dev/.<R>/` (tmpfs), exec the daemon with the neutral argv[0], then `rm -rf /dev/.<R>`.
-
-The payload assets live only inside the app's APK (built into it by the ZygiskRewire app build); `customize.sh` does nothing payload-related. No `.so` or ELF persists under `/data/adb` after boot completes.
+Contains only: neutral `module.prop` (no `updateJson`, no Zygisk wording, no emoji status rewrite —
+status moves to the app UI), `sepolicy.rule` (renamed type), the two stub scripts, `module.prop.bak`
+logic dropped. `post-fs-data.sh` does: locate APK by glob, extract+decode assets to `/dev/.<R>/`,
+exec the monitor from there (cwd = `/dev/.<R>`), pass the binary fds.
 
 ### 3. Manager app as payload carrier
 
-The existing `ZygiskRewire` Android Studio scaffold becomes the manager app (namespace `tech.thessemaj.zygiskrewire`):
+- Ships daemon + ptracer + loader `.so` for each ABI as size-prefixed XOR-obfuscated assets
+  (not recognizable ELFs to a casual `unzip`), names derived from `identity.mk`.
+- Provides the manager UI (webroot ported into the app), status, start/stop via the randomized
+  control socket, and identity-hash verification (`verify.sh` logic moves in-app; module stub
+  re-checks the hash embedded in `module.prop` at boot — mismatch = refuse to start).
 
-- Ships daemon + loader binaries as assets in the APK (lightly obfuscated so `unzip` alone doesn't yield recognizable ELFs; extraction script XOR/size-prefix decodes them).
-- Provides manager UI (reuses ReZygisk's webroot concept), status checks, and daemon control.
-- Ships as a normal APK; nothing about it needs root to install.
+### 4. Monitor-side exec hygiene (code change in `monitor.c`)
 
-### 4. Daemon execution with no on-disk path
+- At startup the monitor opens daemon/ptracer binaries (both ABIs it may need) and keeps the fds.
+- `ensure_daemon_created` / tracer spawn change from `execl("./bin/...")` to
+  `execl("/proc/self/fd/<n>", "<neutral argv0>", ...)` with `FD_CLOEXEC` cleared on the execed fd.
+- After the daemon for the primary ABI is up, the stub script's cleanup step deletes `/dev/.<R>`;
+  the running processes hold open fds, so exec-by-fd keeps working for the session (incl. 32-bit
+  lazy daemon and zygote-restart tracers). Fallback if fd-exec proves fragile on a manager:
+  keep `/dev/.<R>/` for the session (still tmpfs, random per boot, no identifying names) and accept
+  the root-visible tmpfs listing as a residual.
 
-- Script extracts daemon to `/dev/.<R>/` (tmpfs: content never touches flash, dies with reboot).
-- Daemon is exec'd, then the directory is deleted; the running process keeps a valid text mapping with a deleted path that never re-appears anywhere (it is not in any app's maps, only its own).
-- argv[0]/process name set to the randomized neutral value (ReZygisk already does `exec` with a name argument; we feed it the random name).
+### 5. Path-free loader mapping (code change in `remote_csoloader.c`)
 
-### 5. Loader mapping with no path in app processes
+Replace the remote `openat` + file-backed PT_LOAD mapping (`734-762`, `851-1002`) with:
+anonymous `MAP_FIXED|MAP_ANONYMOUS|RW` per-segment mappings + bulk `process_vm_writev` copy of
+segment image from the locally-opened fd (chunked ~256 KiB), then the existing `segs[]`
+`mprotect` finalization (`1054-1078`). Relocations, bss, entry-resolve unchanged. Result: maps shows
+only anonymous regions. Handles the `--no-rosegment` page-overlap case by copying each segment's
+page-aligned range independently. `ptracer.c:184` lib path becomes the randomized asset name
+resolved from the extracted dir fd passed by the stub script (no absolute path exists anymore).
+Fallback: remote `memfd_create` with neutral random name (`/memfd:<rand> (deleted)` in maps).
 
-Current code (`loader/src/ptracer/remote_csoloader.c`) opens `libzygisk.so` **by path in the target process** (`openat` remote syscall), so the path lands in the app's `maps`.
+### 6. Sockets
 
-Change: the ptracer reads the loader image itself, then in the target process:
+Keep **file** sockets (abstract sockets change the SELinux story for the zygote-context loader and
+lose the existing cloaking semantics), but at `/dev/.<R>/<rand>.sock` (tmpfs, per-boot random) for
+`init_monitor` + `cp{32,64}`-equivalents; SELinux: zygote gets read/write on tmpfs sockets via the
+renamed `zygisk_file`-equivalent type. `/proc/net/unix` shows random tmpfs paths only while
+sockets are live. The daemon's `sockcreate` zygote cloaking (`zygiskd.c:160`) is kept.
 
-1. remote-allocates anonymous memory (the code already reserves anonymous mappings),
-2. copies the ELF image pages in via remote writes,
-3. performs relocations/exports through the existing CSOLoader logic,
+### 7. Companions and module loading
 
-so `/proc/<pid>/maps` shows only anonymous executable regions with no file path and no memfd name. (Fallback if copy-through is too costly: remote `memfd_create` with a random neutral name — path reads as `/memfd:<random> (deleted)`.)
+- Companion `execv` argv0 becomes fully neutral (`<rand>`, no module name); the fd-number argument
+  is replaced by an fd received via the existing socketpair instead of argv (drops `zygiskd64-<module>
+  companion <fd>` from cmdline).
+- Companion `dlopen("/proc/self/fd/<n>")` resolves to the module's real path in its own maps
+  (root-only surface, module's own file — accepted residual; noted for phase 2 via memfd copy).
+- Module `.so` scanning of `/data/adb/modules/*/zygisk/` is unchanged (API compatibility);
+  `GetModuleDir` fd passing unchanged.
 
-### 6. Socket hygiene
+## Boot Sequence (revised)
 
-- Monitor and daemon-companion sockets become abstract-namespace sockets with the per-build random names, or file sockets under `/dev/.<R>/` (deleted at boot end), removing the current `rezygiskd`-path and `TMP_PATH` file sockets from `/proc/net/unix` fingerprints.
-
-## Boot Sequence
-
-1. Magisk/KSU/APatch runs `/data/adb/modules/<R>/post-fs-data.sh` as root.
-2. Script finds the ZygiskRewire APK (`pm path tech.thessemaj.zygiskrewire`), extracts payload assets to `/dev/.<R>/`, decodes them.
-3. Script execs the daemon (`argv[0]` = neutral name); daemon loads its identity from `identity.mk`-derived compile-time constants.
-4. Script deletes `/dev/.<R>`.
-5. Daemon ptraces zygote(s); monitor injects the loader into app processes via anonymous-copy mapping.
-6. Manager app UI talks to the daemon over the randomized abstract socket for status/control.
+1. Manager applies `sepolicy.rule` (renamed type) in pre-init — unchanged mechanism.
+2. `post-fs-data.sh` (stub): glob `/data/app/*tech.thessemaj.zygiskrewire*/base.apk`, extract
+   obfuscated assets, decode into `/dev/.<R>/` (tmpfs), verify identity hash against the one
+   stamped in `module.prop`, `cd /dev/.<R>`, exec `<rand> monitor` (the ptracer), which opens all
+   binary fds and starts. Stub script deletes `/dev/.<R>` once the primary daemon is confirmed up.
+3. Monitor seizes init (before zygote — hard timing constraint, same as today).
+4. Zygote exec observed -> daemon spawned via `/proc/self/fd/<n>` with neutral argv0; daemon
+   `setns`es to init's namespace, scans module dirs, reports state (to the app UI, no
+   `module.prop` rewriting, `state.json` replaced by a randomized path or dropped).
+5. Tracer injects the loader into zygote via GOT hook (unchanged mechanics) mapping it anonymously.
+6. Apps fork; per-app unmount/mount-ns swap, denylist handling, module pre/postSpecialize: unchanged.
+7. Manager app UI connects to the randomized socket for status/control.
 
 ## Error Handling
 
-- **App not installed at boot:** daemon cannot start; script retries a bounded number of times, then exits. The manager app, when launched later, can start the daemon via `su` (its normal role), so recovery is a manual app open rather than a boot failure.
-- **tmpfs extraction fails** (`/dev` unavailable): fall back to `/data/local/tmp` with `rm` after exec (slightly weaker: touches flash).
-- **SELinux:** all extraction/exec happens in the root module-script context (unconfined), which may read the APK and exec from tmpfs. The daemon, once started from the script, inherits that context exactly as ReZygisk's daemon does today. No new policy needed beyond today's `sepolicy.rule`.
-- **Identity drift between module stub and app APK:** `verify.sh` compares a per-build identity hash stored in both the module dir and the APK assets; on mismatch the daemon refuses to start and the app UI reports it.
+- **APK glob empty** (app not installed / renamed package): stub retries briefly, then exits; a
+  later manual app open (its UI starts the daemon via `su`) recovers the session. No boot failure.
+- **App updated between boots**: glob matches the new randomized dir (package prefix stable);
+  identity-hash mismatch (module stub from older build vs newer APK) -> refuse + surface in app UI
+  with re-flash instructions.
+- **tmpfs unavailable**: fall back to `/data/local/tmp` (flash-touched; logged only to the app UI).
+- **fd-exec fails on a manager** (exec-by-fd restrictions): monitor falls back to keeping
+  `/dev/.<R>/` for the session (accepted residual, see §4).
 
 ## Testing
 
-Joseph's devices: Pixel 6 Pro (`raven`), Pixel 9 Pro (`caiman`), Android 16, across Magisk/KernelSU/APatch as available.
+Pixel 6 Pro (`raven`), Pixel 9 Pro (`caiman`), Android 16, Magisk/KernelSU/APatch as available:
 
-- Build produces a coherent randomized identity; second build differs everywhere.
-- After boot: `grep -r zygisk /data/adb` (as root) hits only the stub scripts; `cat /proc/*/maps | grep -E 'zygisk|rezygisk|/data/adb'` in a hooked app: no hits; `cat /proc/net/unix`: no zygisk names; `ps -A`: no zygisk/ReZygisk names.
-- Module loads and a test module (e.g. a trivial `zygisk` module from the ecosystem) confirms API compatibility.
-- Boot-time reliability across 10 reboots on each manager root.
+1. Two consecutive builds produce fully disjoint identities (diff all embedded strings).
+2. After boot, as root: `grep -rE 'zygisk|rezygisk' /data/adb` -> stub only; `ps -A`, `cat /proc/*/maps`,
+   `cat /proc/net/unix`, `logcat -d`, `sepolicy` query -> no identifying hits (TracerPid residual
+   documented as expected).
+3. A real third-party Zygisk module loads, its companion works, per-app unmount works.
+4. Boot reliability: 10 reboots per device/manager; measure stub->monitor->daemon timing margins.
+5. App-update scenario: update APK without re-flashing -> clean refusal + UI guidance.
 
 ## Licensing
 
-The fork stays GPL-3.0: LICENSE is preserved, all modifications are published in this public fork (`iamjosephmj/ZygiskRewire`), and NOTICE/README credit PerformanC/ReZygisk as upstream.
+GPL-3.0 preserved; all modifications published in `iamjosephmj/ZygiskRewire`; NOTICE/README credit
+PerformanC/ReZygisk as upstream.
