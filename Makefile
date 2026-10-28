@@ -9,7 +9,7 @@ OBJ_DIR = $(BUILD_DIR)/obj/$(BUILD_TYPE)
 MODULE_OUT = $(BUILD_DIR)/module/$(BUILD_TYPE)
 ZIP_DIR = $(BUILD_DIR)/out
 
-ZKSU_VERSION = $(VER_NAME)-$(VER_CODE)-$(COMMIT_HASH)-$(BUILD_TYPE)
+ZKSU_VERSION = 1.0
 
 ZIP_NAME = $(MODULE_NAME)-$(VER_NAME)-$(VER_CODE)-$(COMMIT_HASH)-$(BUILD_TYPE).zip
 ZIP_FILE = $(ZIP_DIR)/$(ZIP_NAME)
@@ -27,10 +27,10 @@ LOADER_DONE = $(OBJ_DIR)/loader/.done
 ZYGISKD_DONE = $(OBJ_DIR)/zygiskd/.done
 MODULE_DONE = $(BUILD_DIR)/module-$(BUILD_TYPE).done
 
-LOADER_INPUTS = common.mk $(ROOT_DIR)/build/identity.mk loader/Makefile \
+LOADER_INPUTS = common.mk $(IDENTITY_MK) loader/Makefile \
         $(shell find loader/src -type f | sort)
 
-ZYGISKD_INPUTS = common.mk $(ROOT_DIR)/build/identity.mk zygiskd/Makefile \
+ZYGISKD_INPUTS = common.mk $(IDENTITY_MK) zygiskd/Makefile \
         $(shell find zygiskd/src -type f | sort)
 
 MODULE_INPUTS = scripts/sign.py \
