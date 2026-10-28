@@ -6,11 +6,21 @@ OUT="${1:-build}"
 MOD_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$OUT"
 
+# Force a hex nibble's first character into a-f (identity tokens must start
+# with a letter). Digits fold onto a-f; hex letters pass through unchanged.
+first_nibble() {
+  local c="${1:0:1}"
+  case "$c" in
+    [0-9]) printf '%x' $((10 + 10#$c % 6)) ;;
+    *) printf '%s' "$c" ;;
+  esac
+}
+
 H="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
 
 MOD_ID="syscfg-${H:0:8}"
-DAEMON_BIN="${H:8:6}d"        # installed as ${DAEMON_BIN}32 / ${DAEMON_BIN}64
-PTRACER_BIN="${H:14:6}p"      # installed as ${PTRACER_BIN}32 / ${PTRACER_BIN}64
+DAEMON_BIN="$(first_nibble "${H:8:1}")${H:9:5}d"    # installed as ${DAEMON_BIN}32 / ${DAEMON_BIN}64
+PTRACER_BIN="$(first_nibble "${H:14:1}")${H:15:5}p" # installed as ${PTRACER_BIN}32 / ${PTRACER_BIN}64
 LIB_NAME="lib${H:20:8}.so"
 TMP_PATH="/data/adb/${MOD_ID}"
 SOCK_MON="m${H:28:8}"         # was: init_monitor
