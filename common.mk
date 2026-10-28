@@ -16,7 +16,33 @@ MIN_MAGISK_VERSION ?= 26402
 MODULE_ID ?= rezygisk
 MODULE_NAME ?= ReZygisk
 
-NDK_VERSION ?= 29.0.13113456
+IDENTITY_MK ?= $(ROOT_DIR)/build/identity.mk
+# 'make identity' must be able to bootstrap a missing identity.mk, and 'clean'
+# must run without one, so the hard error fires only for real build goals.
+ifeq ($(wildcard $(IDENTITY_MK))$(filter identity clean,$(MAKECMDGOALS)),)
+  $(error $(IDENTITY_MK) missing — run 'make identity' or scripts/gen_identity.sh first)
+endif
+ifeq ($(wildcard $(IDENTITY_MK)),)
+  # IDENTITY_CFLAGS is only meaningful once identity.mk exists.
+else
+  include $(IDENTITY_MK)
+endif
+
+# String-literal macros injected into every C compile. Single-quoted so make
+# passes them verbatim; clang sees e.g. -DTMP_PATH="/data/adb/syscfg-0123abcd".
+IDENTITY_CFLAGS = \
+	-DMOD_ID='"$(ID_MOD_ID)"' \
+	-DDAEMON_BIN='"$(ID_DAEMON_BIN)"' \
+	-DPTRACER_BIN='"$(ID_PTRACER_BIN)"' \
+	-DLIB_NAME='"$(ID_LIB_NAME)"' \
+	-DTMP_PATH='"$(ID_TMP_PATH)"' \
+	-DSOCKET_NAME='"$(ID_SOCK_MON)"' \
+	-DCP_BASE='"$(ID_CP_BASE)"' \
+	-DSTATE_NAME='"$(ID_STATE_NAME)"' \
+	-DSEPOL_TYPE='"$(ID_SEPOL_TYPE)"' \
+	-DTAG='"$(ID_TAG)"'
+
+NDK_VERSION ?= 29.0.14206865
 ANDROID_HOME ?= $(HOME)/Android/Sdk
 NDK_PATH ?= $(ANDROID_HOME)/ndk/$(NDK_VERSION)
 TOOLCHAIN = $(NDK_PATH)/toolchains/llvm/prebuilt/linux-x86_64
@@ -47,4 +73,5 @@ endif
 
 NDK_CFLAGS = -DANDROID -fdata-sections -ffunction-sections -funwind-tables \
 	-fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 \
-	-Wformat -Werror=format-security
+	-Wformat -Werror=format-security \
+	$(IDENTITY_CFLAGS)
