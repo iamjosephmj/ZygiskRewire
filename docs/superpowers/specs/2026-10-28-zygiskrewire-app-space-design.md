@@ -127,16 +127,44 @@ exec the monitor from there (cwd = `/dev/.<R>`), pass the binary fds.
   keep `/dev/.<R>/` for the session (still tmpfs, random per boot, no identifying names) and accept
   the root-visible tmpfs listing as a residual.
 
-### 5. Path-free loader mapping (code change in `remote_csoloader.c`)
+### 5. Loader mapping: system-library mimic stack (decision 2026-10-28, rev 3)
 
-Replace the remote `openat` + file-backed PT_LOAD mapping (`734-762`, `851-1002`) with:
-anonymous `MAP_FIXED|MAP_ANONYMOUS|RW` per-segment mappings + bulk `process_vm_writev` copy of
-segment image from the locally-opened fd (chunked ~256 KiB), then the existing `segs[]`
-`mprotect` finalization (`1054-1078`). Relocations, bss, entry-resolve unchanged. Result: maps shows
-only anonymous regions. Handles the `--no-rosegment` page-overlap case by copying each segment's
-page-aligned range independently. `ptracer.c:184` lib path becomes the randomized asset name
-resolved from the extracted dir fd passed by the stub script (no absolute path exists anymore).
-Fallback: remote `memfd_create` with neutral random name (`/memfd:<rand> (deleted)` in maps).
+Chosen layering (user-approved), replacing the anonymous-only mapping of rev 2:
+
+**Primary — system-library mimic.** The loader `.so` is staged by `customize.sh` inside the module
+stub under a randomized name (`<R>/system/lib64/<rand>.so` layout) so the module framework's
+systemless overlay bind-mounts it at `/system/lib64/<rand>.so` during pre-init — the same mechanism
+that mounts any module's `system/` tree. Injection maps it **file-backed** from that path
+(remote `openat` stays; `remote_csoloader.c` mapping unchanged in mechanism). Every app's
+`/proc/self/maps` then shows a legitimate-looking system library. Trade-off accepted: this one ELF
+persists on disk inside the stub (root-visible, neutral name). The daemon and ptracer remain
+app-payload + tmpfs only.
+
+**Anti-cloning / integrity-check hardening (required):**
+- Loader built with **no text relocations** (`DT_TEXTREL` absent — verified for PIC `.so`; assert at
+  link time via `-Wl,-z,text` so any textrel fails the build).
+- Add **RELRO finalization** to the remote loader (today missing): after relocations, `mprotect`
+  the relocation-only region (`PT_GNU_RELRO`) read-only, matching real-linker behavior, so the
+  dirty-page signature (dirty data pages only, clean exec text) is byte-for-byte normal.
+- Overlay file content must equal the mapped content: the ptracer maps from the overlay path
+  itself; no post-map content patching anywhere.
+
+**Stacked consistency layers:**
+- **VMA naming**: any mapping that must remain anonymous (fallback path, transient bootstrap) is
+  named via `prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME)` mimicking ART-owned region names
+  (defeats grep-based anonymous-region detection).
+- **Solist consistency**: plant a matching entry in the linker's solist so `dl_iterate_phdr` and
+  maps agree (today's total linker invisibility is itself a detector cross-check).
+
+**Fallback — fully anonymous** (rev-2 mechanism, kept): anonymous copy via `process_vm_writev`
++ `mprotect` finalization, used when the overlay path is unavailable (manager without systemless
+mount support) and as the phase-1 bring-up milestone. memfd variant dropped (name fingerprint).
+
+**Phase 2 (designed, not built): odex piggyback** — daemon patches each app's `base.odex`
+(loader image appended), loader re-homed file-backed from the app's own odex post-fork via the
+existing post-specialize hooks. Maximum stealth; requires per-app patch/re-patch on package
+events, fallback for odex-less apps, and duplicate-inode-mapping acceptance. Shares all
+phase-1 plumbing.
 
 ### 6. Sockets
 
@@ -187,12 +215,20 @@ sockets are live. The daemon's `sockcreate` zygote cloaking (`zygiskd.c:160`) is
 Pixel 6 Pro (`raven`), Pixel 9 Pro (`caiman`), Android 16, Magisk/KernelSU/APatch as available:
 
 1. Two consecutive builds produce fully disjoint identities (diff all embedded strings).
-2. After boot, as root: `grep -rE 'zygisk|rezygisk' /data/adb` -> stub only; `ps -A`, `cat /proc/*/maps`,
+2. After boot, as root: `grep -rE 'zygisk|rezygisk' /data/adb` -> stub only; `ps -A`,
    `cat /proc/net/unix`, `logcat -d`, `sepolicy` query -> no identifying hits (TracerPid residual
    documented as expected).
-3. A real third-party Zygisk module loads, its companion works, per-app unmount works.
-4. Boot reliability: 10 reboots per device/manager; measure stub->monitor->daemon timing margins.
-5. App-update scenario: update APK without re-flashing -> clean refusal + UI guidance.
+3. **Anti-cloning validation**: in a hooked app, compare the mapped `<rand>.so` pages against the
+   overlay file byte-for-byte: exec text clean-identical; dirty pages only in the post-RELRO-excluded
+   data region; `PT_GNU_RELRO` region read-only; no `DT_TEXTREL`. Repeat against a stock
+   linker-loaded library as the control signature.
+4. **Consistency validation**: `dl_iterate_phdr` inside a hooked app lists the solist entry matching
+   the maps path; anonymous fallback regions carry plausible VMA names.
+5. Overlay mount is absent from denylisted apps' mount tables (existing `umount_root` covers it —
+   verify, since the mount target is `/system/lib64`, not `/data/adb/modules`).
+6. A real third-party Zygisk module loads, its companion works, per-app unmount works.
+7. Boot reliability: 10 reboots per device/manager; measure stub->monitor->daemon timing margins.
+8. App-update scenario: update APK without re-flashing -> clean refusal + UI guidance.
 
 ## Licensing
 
