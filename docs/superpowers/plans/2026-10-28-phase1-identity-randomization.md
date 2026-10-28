@@ -313,6 +313,10 @@ Expected: nonzero counts.
 ```c
 #define ZYGISKD_PATH TMP_PATH "/bin/" DAEMON_BIN LP_SELECT("32", "64")
 ```
+> **Correction (ratified during execution, Task 4 review):** the daemon installs to the
+> *module directory's* `bin/`, not to `TMP_PATH` (which the stub script removes each boot).
+> The shipped form is `PATH_MODULES_DIR "/" MOD_ID "/bin/" DAEMON_BIN LP_SELECT("32", "64")`
+> — reviewer-verified against every consumer. The literal above is superseded.
 
 `zygiskd.c` state writer — replace `"state.json"` with `STATE_NAME` (same pattern as Task 3).
 
