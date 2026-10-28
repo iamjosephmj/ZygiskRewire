@@ -1,5 +1,8 @@
 BUILD_DIR := $(CURDIR)/build
 
+# 'debug' stays the default goal; the identity: rule below must not become one.
+.DEFAULT_GOAL := debug
+
 include common.mk
 
 OBJ_DIR = $(BUILD_DIR)/obj/$(BUILD_TYPE)
@@ -36,9 +39,18 @@ MODULE_INPUTS = scripts/sign.py \
         $(wildcard module/private_key module/public_key)
 
 .PHONY: debug release build clean                                         \
+        identity                                                          \
         installKsu installMagisk installAPatch                            \
         installKsuAndReboot installMagiskAndReboot installAPatchAndReboot \
         analyzer
+
+identity:
+	$(ROOT_DIR)/scripts/gen_identity.sh $(BUILD_DIR)
+
+$(BUILD_DIR)/identity.mk: scripts/gen_identity.sh
+	$(ROOT_DIR)/scripts/gen_identity.sh $(BUILD_DIR)
+
+debug release build: $(BUILD_DIR)/identity.mk
 
 debug:
 	$(MAKE) BUILD_TYPE=debug BUILD_DIR=$(BUILD_DIR) build

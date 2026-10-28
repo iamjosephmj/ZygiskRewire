@@ -3,3 +3,6 @@
 .idea
 .vscode
 build
+
+# Generated per-build identity (Task 1 scripts/gen_identity.sh output)
+module/identity.env
