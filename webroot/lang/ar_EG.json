@@ -41,7 +41,7 @@
     },
     "modules": {
       "title": "الوحدات",
-      "notAvaliable": "لا توجد وحدات تستخدم Zygisk.",
+      "notAvaliable": "لا توجد وحدات تستخدم API.",
       "arch": "المعمارية:"
     },
     "settings": {

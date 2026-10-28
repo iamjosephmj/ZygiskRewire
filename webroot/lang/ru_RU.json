@@ -41,7 +41,7 @@
     },
     "modules": {
       "title": "Модули",
-      "notAvaliable": "Здесь нет модулей, использующих Zygisk.",
+      "notAvaliable": "Здесь нет модулей, использующих API.",
       "arch": "Архитектура: "
     },
     "settings": {

@@ -41,7 +41,7 @@
     },
     "modules": {
       "title": "模块",
-      "notAvaliable": "目前没有模块使用 Zygisk",
+      "notAvaliable": "目前没有模块使用 API",
       "arch": "架构: "
     },
     "settings": {

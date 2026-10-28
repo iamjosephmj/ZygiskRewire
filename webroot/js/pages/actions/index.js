@@ -3,16 +3,16 @@ import { getStrings } from '../pageLoader.js'
 import { exec, toast } from '../../kernelsu.js'
 
 async function _getMonitorState() {
-  const stateCmd = await exec('/system/bin/cat /data/adb/rezygisk/state.json')
+  const stateCmd = await exec('/system/bin/cat @@TMP_PATH@@/@@STATE_NAME@@')
   if (stateCmd.errno !== 0) {
-    toast('Error getting state of ReZygisk!')
+    toast('Error getting state!')
 
     return;
   }
 
   try {
-    const ReZygiskState = JSON.parse(stateCmd.stdout)
-    return ReZygiskState.monitor.state
+    const ModState = JSON.parse(stateCmd.stdout)
+    return ModState.monitor.state
   } catch {
     return null;
   }
@@ -56,18 +56,18 @@ export async function load() {
   monitor_start.addEventListener('click', () => {
     if (![ strings.monitor.status.tracing, strings.monitor.status.stopping, strings.monitor.status.stopped ].includes(monitor_status.innerHTML)) return;
     monitor_status.innerHTML = strings.monitor.status.tracing
-    exec('/data/adb/modules/rezygisk/bin/zygisk-ptrace64 ctl start')
+    exec('/data/adb/modules/@@MOD_ID@@/bin/@@PTRACER_BIN@@64 ctl start')
   })
 
   monitor_stop.addEventListener('click', () => {
     monitor_status.innerHTML = strings.monitor.status.exiting
-    exec('/data/adb/modules/rezygisk/bin/zygisk-ptrace64 ctl exit')
+    exec('/data/adb/modules/@@MOD_ID@@/bin/@@PTRACER_BIN@@64 ctl exit')
   })
 
   monitor_pause.addEventListener('click', () => {
     if (![ strings.monitor.status.tracing, strings.monitor.status.stopping, strings.monitor.status.stopped ].includes(monitor_status.innerHTML)) return;
     monitor_status.innerHTML = strings.monitor.status.stopped
-    exec('/data/adb/modules/rezygisk/bin/zygisk-ptrace64 ctl stop')
+    exec('/data/adb/modules/@@MOD_ID@@/bin/@@PTRACER_BIN@@64 ctl stop')
   })
 
   return;

@@ -53,9 +53,11 @@ $(BUILD_DIR)/identity.mk: scripts/gen_identity.sh
 debug release build: $(BUILD_DIR)/identity.mk
 
 debug:
+	$(ROOT_DIR)/scripts/gen_identity.sh $(BUILD_DIR)
 	$(MAKE) BUILD_TYPE=debug BUILD_DIR=$(BUILD_DIR) build
 
 release:
+	$(ROOT_DIR)/scripts/gen_identity.sh $(BUILD_DIR)
 	$(MAKE) BUILD_TYPE=release BUILD_DIR=$(BUILD_DIR) build
 
 all: debug release
@@ -72,7 +74,7 @@ $(ZYGISKD_DONE): $(ZYGISKD_INPUTS)
 	@mkdir -p $(dir $@)
 	@touch $@
 
-$(MODULE_DONE): $(LOADER_DONE) $(ZYGISKD_DONE) $(MODULE_INPUTS)
+$(MODULE_DONE): $(LOADER_DONE) $(ZYGISKD_DONE) $(BUILD_DIR)/identity.mk $(MODULE_INPUTS)
 
 	@rm -rf $(MODULE_OUT)
 	@mkdir -p $(MODULE_OUT)/META-INF/com/google/android
@@ -84,12 +86,11 @@ $(MODULE_DONE): $(LOADER_DONE) $(ZYGISKD_DONE) $(MODULE_INPUTS)
 
 
 	@echo "Copying module files..."
-	@cp module/src/verify.sh module/src/sepolicy.rule module/src/rezygisk.sh $(MODULE_OUT)/
+	@cp module/src/verify.sh module/src/sepolicy.rule $(MODULE_OUT)/
+	@cp module/src/rezygisk.sh $(MODULE_OUT)/$$(sed -n 's/^ID_MOD_ID := //p' $(BUILD_DIR)/identity.mk).sh
 
 	@echo "Customizing module.prop..."
-	@sed -e 's/$${moduleId}/$(MODULE_ID)/g'                                             \
-	    -e 's/$${moduleName}/$(MODULE_NAME)/g'                                          \
-	    -e 's/$${versionName}/$(VER_NAME) ($(VER_CODE)-$(COMMIT_HASH)-$(BUILD_TYPE))/g' \
+	@sed -e 's/$${versionName}/$(VER_NAME) ($(VER_CODE)-$(COMMIT_HASH)-$(BUILD_TYPE))/g' \
 	    -e 's/$${versionCode}/$(VER_CODE)/g'                                            \
 	    module/src/module.prop > $(MODULE_OUT)/module.prop
 
@@ -103,23 +104,41 @@ $(MODULE_DONE): $(LOADER_DONE) $(ZYGISKD_DONE) $(MODULE_INPUTS)
 		    module/src/$$script > $(MODULE_OUT)/$$script;                   \
 	done
 
+	@echo "Rendering module files from per-build identity..."
+	@bash scripts/render_module.sh                                        \
+		$(MODULE_OUT)/module.prop                                           \
+		$(MODULE_OUT)/sepolicy.rule                                         \
+		$(MODULE_OUT)/$$(sed -n 's/^ID_MOD_ID := //p' $(BUILD_DIR)/identity.mk).sh \
+		$(MODULE_OUT)/customize.sh $(MODULE_OUT)/post-fs-data.sh            \
+		$(MODULE_OUT)/service.sh $(MODULE_OUT)/uninstall.sh
+	@cp module/identity.env $(MODULE_OUT)/identity.env
+
 	@echo "Copying binaries..."
-	@for arch in $(ARCHS); do                                                                                  \
-		mkdir -p $(MODULE_OUT)/bin/$$arch $(MODULE_OUT)/lib/$$arch;                                            \
-		cp $(OBJ_DIR)/zygiskd/$$arch/zygiskd $(MODULE_OUT)/bin/$$arch/zygiskd;                                 \
-		cp $(OBJ_DIR)/loader/$$arch/stripped/libzygisk.so $(MODULE_OUT)/lib/$$arch/libzygisk.so;               \
-		cp $(OBJ_DIR)/loader/$$arch/stripped/libzygisk_ptrace.so $(MODULE_OUT)/lib/$$arch/libzygisk_ptrace.so; \
-	done
+	@ID_DAEMON_BIN=$$(sed -n 's/^ID_DAEMON_BIN := //p' $(BUILD_DIR)/identity.mk);  \
+		ID_PTRACER_BIN=$$(sed -n 's/^ID_PTRACER_BIN := //p' $(BUILD_DIR)/identity.mk); \
+		ID_LIB_NAME=$$(sed -n 's/^ID_LIB_NAME := //p' $(BUILD_DIR)/identity.mk);       \
+		for arch in $(ARCHS); do                                                       \
+			case $$arch in arm64-v8a|x86_64) bits=64;; *) bits=32;; esac;                \
+			mkdir -p $(MODULE_OUT)/bin/$$arch $(MODULE_OUT)/lib/$$arch;                  \
+			cp $(OBJ_DIR)/zygiskd/$$arch/zygiskd $(MODULE_OUT)/bin/$$arch/$${ID_DAEMON_BIN}$${bits};                  \
+			cp $(OBJ_DIR)/loader/$$arch/stripped/libzygisk.so $(MODULE_OUT)/lib/$$arch/$${ID_LIB_NAME};               \
+			cp $(OBJ_DIR)/loader/$$arch/stripped/libzygisk_ptrace.so $(MODULE_OUT)/bin/$$arch/$${ID_PTRACER_BIN}$${bits}; \
+		done
 
 	@echo "Copying webroot..."
 	@cp -r webroot $(MODULE_OUT)/webroot
+	@bash scripts/render_module.sh $$(grep -rl -- '@@' $(MODULE_OUT)/webroot 2>/dev/null || true)
 
-	@if [ -f module/private_key ]; then                                             \
-		echo "Signing module...";                                                   \
-		python3 scripts/sign.py $(MODULE_OUT) module/private_key module/public_key; \
-	else                                                                            \
-	    echo "No private key found, skipping signing...";                           \
-		python3 scripts/sign.py --no-sign $(MODULE_OUT);                            \
+	@if [ -f module/private_key ]; then                                                  \
+		echo "Signing module...";                                                        \
+		ID_MOD_ID=$$(sed -n 's/^ID_MOD_ID := //p' $(BUILD_DIR)/identity.mk)              \
+		ID_LIB_NAME=$$(sed -n 's/^ID_LIB_NAME := //p' $(BUILD_DIR)/identity.mk)          \
+		ID_DAEMON_BIN=$$(sed -n 's/^ID_DAEMON_BIN := //p' $(BUILD_DIR)/identity.mk)      \
+		ID_PTRACER_BIN=$$(sed -n 's/^ID_PTRACER_BIN := //p' $(BUILD_DIR)/identity.mk)    \
+		python3 scripts/sign.py $(MODULE_OUT) module/private_key module/public_key;      \
+	else                                                                                 \
+	    echo "No private key found, skipping signing...";                                \
+		python3 scripts/sign.py --no-sign $(MODULE_OUT);                                 \
 	fi
 
 	@mkdir -p $(dir $@)

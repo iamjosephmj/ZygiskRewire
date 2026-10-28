@@ -41,7 +41,7 @@
     },
     "modules": {
       "title": "Modul",
-      "notAvaliable": "Tidak ada modul yang menggunakan Zygisk.",
+      "notAvaliable": "Tidak ada modul yang menggunakan API.",
       "arch": "Arsitektur: "
     },
     "settings": {
