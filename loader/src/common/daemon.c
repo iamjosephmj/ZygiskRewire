@@ -12,9 +12,9 @@
 
 #include "daemon.h"
 
-#define SOCKET_FILE_NAME LP_SELECT("cp32", "cp64") ".sock"
+#define SOCKET_FILE_NAME LP_SELECT(CP_BASE "32", CP_BASE "64") ".sock"
 
-static int rezygiskd_connect(uint8_t retry) {
+static int daemon_connect(uint8_t retry) {
   struct sockaddr_un addr = {
     .sun_family = AF_UNIX,
     .sun_path = { 0 }
@@ -59,7 +59,7 @@ static int rezygiskd_connect(uint8_t retry) {
 /* TODO: We should unify all of those */
 #define safe_write(fn, name, ret_type)             \
   if (fn == -1) {                                  \
-    LOGE("Failed to write " name " to ReZygiskd"); \
+    LOGE("Failed to write " name " to daemon"); \
                                                    \
     close(fd);                                     \
                                                    \
@@ -68,15 +68,15 @@ static int rezygiskd_connect(uint8_t retry) {
 
 #define safe_read(fn, name, ret_type)               \
   if (fn == -1) {                                   \
-    LOGE("Failed to read " name " from ReZygiskd"); \
+    LOGE("Failed to read " name " from daemon"); \
                                                     \
     close(fd);                                      \
                                                     \
     ret_type;                                       \
   }
 
-bool rezygiskd_zygote_injected() {
-  int fd = rezygiskd_connect(5);
+bool daemon_zygote_injected() {
+  int fd = daemon_connect(5);
   if (fd == -1) return false;
 
   safe_write(write_uint8_t(fd, (uint8_t)ZygoteInjected), "ZygoteInjected action", return false);
@@ -86,8 +86,8 @@ bool rezygiskd_zygote_injected() {
   return true;
 }
 
-uint32_t rezygiskd_get_process_flags(uid_t uid, const char *const process) {
-  int fd = rezygiskd_connect(1);
+uint32_t daemon_get_process_flags(uid_t uid, const char *const process) {
+  int fd = daemon_connect(1);
   if (fd == -1) return 0;
 
   safe_write(write_uint8_t(fd, (uint8_t)GetProcessFlags), "GetProcessFlags action", return 0);
@@ -102,8 +102,8 @@ uint32_t rezygiskd_get_process_flags(uid_t uid, const char *const process) {
   return res;
 }
 
-void rezygiskd_get_info(struct rezygisk_info *info) {
-  int fd = rezygiskd_connect(1);
+void daemon_get_info(struct daemon_info *info) {
+  int fd = daemon_connect(1);
   if (fd == -1) {
     info->running = false;
 
@@ -205,7 +205,7 @@ void rezygiskd_get_info(struct rezygisk_info *info) {
 
     info_cleanup:
       info->modules.modules_count = i;
-      free_rezygisk_info(info);
+      free_daemon_info(info);
 
       break;
   }
@@ -213,7 +213,7 @@ void rezygiskd_get_info(struct rezygisk_info *info) {
   close(fd);
 }
 
-void free_rezygisk_info(struct rezygisk_info *info) {
+void free_daemon_info(struct daemon_info *info) {
   for (size_t i = 0; i < info->modules.modules_count; i++) {
     free(info->modules.modules[i]);
   }
@@ -223,8 +223,8 @@ void free_rezygisk_info(struct rezygisk_info *info) {
   info->modules.modules_count = 0;
 }
 
-bool rezygiskd_read_modules(struct zygisk_modules *modules) {
-  int fd = rezygiskd_connect(1);
+bool daemon_read_modules(struct loaded_modules *modules) {
+  int fd = daemon_connect(1);
   if (fd == -1) return false;
 
   safe_write(write_uint8_t(fd, (uint8_t)ReadModules), "ReadModules action", return false);
@@ -263,7 +263,7 @@ bool rezygiskd_read_modules(struct zygisk_modules *modules) {
   return true;
 }
 
-void free_modules(struct zygisk_modules *modules) {
+void free_modules(struct loaded_modules *modules) {
   for (size_t i = 0; i < modules->modules_count; i++) {
     free(modules->modules[i]);
   }
@@ -273,8 +273,8 @@ void free_modules(struct zygisk_modules *modules) {
   modules->modules_count = 0;
 }
 
-int rezygiskd_connect_companion(size_t index) {
-  int fd = rezygiskd_connect(1);
+int daemon_connect_companion(size_t index) {
+  int fd = daemon_connect(1);
   if (fd == -1) return -1;
 
   safe_write(write_uint8_t(fd, (uint8_t)RequestCompanionSocket), "RequestCompanionSocket action", return -1);
@@ -291,8 +291,8 @@ int rezygiskd_connect_companion(size_t index) {
   }
 }
 
-int rezygiskd_get_module_dir(size_t index) {
-  int fd = rezygiskd_connect(1);
+int daemon_get_module_dir(size_t index) {
+  int fd = daemon_connect(1);
   if (fd == -1) return -1;
 
   safe_write(write_uint8_t(fd, (uint8_t)GetModuleDir), "GetModuleDir action", return -1);
@@ -305,8 +305,8 @@ int rezygiskd_get_module_dir(size_t index) {
   return dirfd;
 }
 
-void rezygiskd_zygote_restart() {
-  int fd = rezygiskd_connect(1);
+void daemon_zygote_restart() {
+  int fd = daemon_connect(1);
   if (fd == -1) return;
 
   safe_write(write_uint8_t(fd, (uint8_t)ZygoteRestart), "ZygoteRestart action", return);
@@ -314,8 +314,8 @@ void rezygiskd_zygote_restart() {
   close(fd);
 }
 
-bool rezygiskd_update_mns(enum mount_namespace_state nms_state, char *buf, size_t buf_size) {
-  int fd = rezygiskd_connect(1);
+bool daemon_update_mns(enum mount_namespace_state nms_state, char *buf, size_t buf_size) {
+  int fd = daemon_connect(1);
   if (fd == -1) return false;
 
   safe_write(write_uint8_t(fd, (uint8_t)UpdateMountNamespace), "UpdateMountNamespace action", return false);
@@ -343,8 +343,8 @@ bool rezygiskd_update_mns(enum mount_namespace_state nms_state, char *buf, size_
   return true;
 }
 
-bool rezygiskd_remove_module(size_t index) {
-  int fd = rezygiskd_connect(1);
+bool daemon_remove_module(size_t index) {
+  int fd = daemon_connect(1);
   if (fd == -1) return false;
 
   safe_write(write_uint8_t(fd, (uint8_t)RemoveModule), "RemoveModule action", return false);

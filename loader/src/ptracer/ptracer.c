@@ -11,8 +11,9 @@
 #include <elf.h>
 #include <unistd.h>
 
-#define LOG_TAG "zygisk-injector" LP_SELECT("32", "64")
+#define LOG_TAG TAG "-injector" LP_SELECT("32", "64")
 
+#include "daemon.h"
 #include "misc.h"
 #include "utils.h"
 
@@ -181,7 +182,7 @@ bool trace_zygote(int pid, bool tango_flag) {
   LOGD("Resolved __libc_init at %p (GOT slot %p)", (void *)libc_init_resolved, (void *)libc_init_got_slot);
 
   if (STOPPED_WITH(SIGSTOP, PTRACE_EVENT_STOP)) {
-    char *lib_path = "/data/adb/modules/rezygisk/lib" LP_SELECT("", "64") "/libzygisk.so";
+    char *lib_path = TMP_PATH "/lib" LP_SELECT("", "64") "/" LIB_NAME;
     if (!inject_on_main(pid, lib_path, libc_init_resolved, libc_init_got_slot, tango_flag)) {
       LOGE("failed to inject");
 

@@ -131,10 +131,10 @@ static size_t plt_hook_list_count = 0;
 static struct jni_hook_entry *jni_hook_list = NULL;
 static size_t jni_hook_list_count = 0;
 
-struct rezygisk_module *zygisk_modules = NULL;
-size_t zygisk_module_length = 0;
+struct rezygisk_module *loaded_modules = NULL;
+size_t loaded_module_count = 0;
 
-static bool should_unmap_zygisk = false;
+static bool should_unmap_injection = false;
 static bool enable_unloader = false;
 
 /* INFO: Helper function to add to PLT hook list */
@@ -190,7 +190,7 @@ static void jni_hook_list_add(const char *class_name, JNINativeMethod *methods, 
 
 static bool update_mnt_ns(enum mount_namespace_state mns_state, bool dry_run) {
   char ns_path[PATH_MAX];
-  if (!rezygiskd_update_mns(mns_state, ns_path, sizeof(ns_path))) {
+  if (!daemon_update_mns(mns_state, ns_path, sizeof(ns_path))) {
     PLOGE("Failed to update mount namespace");
 
     return false;
@@ -308,18 +308,18 @@ DCL_HOOK_FUNC(int, pthread_attr_setstacksize, void *target, size_t size) {
   /* INFO: Only perform unloading on the main thread */
   if (gettid() != getpid()) return res;
 
-  if (should_unmap_zygisk) {
+  if (should_unmap_injection) {
     unhook_functions();
 
     csoloader_deinit();
 
-    if (!should_unmap_zygisk) {
-      LOGW("Failed to unmap libzygisk.so, skipping munmap");
+    if (!should_unmap_injection) {
+      LOGW("Failed to unmap injected library, skipping munmap");
 
       enable_unloader = false;
 
-      free(zygisk_modules);
-      zygisk_modules = NULL;
+      free(loaded_modules);
+      loaded_modules = NULL;
 
       plti_deinit(&plti_ctx);
 
@@ -328,12 +328,12 @@ DCL_HOOK_FUNC(int, pthread_attr_setstacksize, void *target, size_t size) {
 
     /* INFO: Modules might use libzygisk.so after postAppSpecialize. We can only
                free it when we are really before our unmap. */
-    free(zygisk_modules);
-    zygisk_modules = NULL;
+    free(loaded_modules);
+    loaded_modules = NULL;
 
     plti_deinit(&plti_ctx);
 
-    LOGD("unmap libzygisk.so loaded at %p with size %zu", start_addr, block_size);
+    LOGD("unmap injected library loaded at %p with size %zu", start_addr, block_size);
 
     [[clang::musttail]] return munmap(start_addr, block_size);
   }
@@ -732,19 +732,19 @@ static bool api_plt_hook_commit_v4(void) {
 static int api_connect_companion(void *id) {
   if (!g_ctx) return -1;
 
-  if ((size_t)id < RZID_MAGIC || (size_t)id >= RZID_MAGIC + zygisk_module_length) {
+  if ((size_t)id < RZID_MAGIC || (size_t)id >= RZID_MAGIC + loaded_module_count) {
     LOGE("Invalid (encoded) module id %zu", (size_t)id);
 
     return -1;
   }
 
-  return rezygiskd_connect_companion(DECODE_ID(id));
+  return daemon_connect_companion(DECODE_ID(id));
 }
 
 static void api_set_option(void *id, enum rezygisk_options opt) {
   if (!g_ctx) return;
 
-  if ((size_t)id < RZID_MAGIC || (size_t)id >= RZID_MAGIC + zygisk_module_length) {
+  if ((size_t)id < RZID_MAGIC || (size_t)id >= RZID_MAGIC + loaded_module_count) {
     LOGE("Invalid (encoded) module id %zu", (size_t)id);
 
     return;
@@ -757,7 +757,7 @@ static void api_set_option(void *id, enum rezygisk_options opt) {
       break;
     }
     case DLCLOSE_MODULE_LIBRARY: {
-      struct rezygisk_module *m_lib = &zygisk_modules[DECODE_ID(id)];
+      struct rezygisk_module *m_lib = &loaded_modules[DECODE_ID(id)];
       m_lib->unload = true;
 
       break;
@@ -768,13 +768,13 @@ static void api_set_option(void *id, enum rezygisk_options opt) {
 static int api_get_module_dir(void *id) {
   if (!g_ctx) return -1;
 
-  if ((size_t)id < RZID_MAGIC || (size_t)id >= RZID_MAGIC + zygisk_module_length) {
+  if ((size_t)id < RZID_MAGIC || (size_t)id >= RZID_MAGIC + loaded_module_count) {
     LOGE("Invalid (encoded) module id %zu", (size_t)id);
 
     return -1;
   }
 
-  return rezygiskd_get_module_dir(DECODE_ID(id));
+  return daemon_get_module_dir(DECODE_ID(id));
 }
 
 static uint32_t api_get_flags(void) {
@@ -783,12 +783,12 @@ static uint32_t api_get_flags(void) {
   return (g_ctx->info_flags & ~PRIVATE_MASK);
 }
 
-bool rezygisk_module_register(struct rezygisk_api *api, struct rezygisk_abi const *target_module) {
+bool module_register(struct rezygisk_api *api, struct rezygisk_abi const *target_module) {
   if (!g_ctx || !api || !target_module || target_module->api_version > REZYGISK_API_VERSION) return false;
 
   LOGD("Registering module with API version %ld", target_module->api_version);
 
-  struct rezygisk_module *m = &zygisk_modules[DECODE_ID(api->impl)];
+  struct rezygisk_module *m = &loaded_modules[DECODE_ID(api->impl)];
   m->abi = *target_module;
   m->api = *api;
 
@@ -936,15 +936,15 @@ static void rz_fork_post(struct zygisk_context *ctx __attribute__((unused))) {
 }
 
 static bool load_modules_only(void) {
-  struct zygisk_modules ms;
-  if (!rezygiskd_read_modules(&ms)) {
-    LOGE("Failed to read modules from ReZygiskd");
+  struct loaded_modules ms;
+  if (!daemon_read_modules(&ms)) {
+    LOGE("Failed to read modules from daemon");
 
     return false;
   }
 
-  zygisk_modules = (struct rezygisk_module *)malloc(ms.modules_count * sizeof(struct rezygisk_module));
-  if (!zygisk_modules) {
+  loaded_modules = (struct rezygisk_module *)malloc(ms.modules_count * sizeof(struct rezygisk_module));
+  if (!loaded_modules) {
     LOGE("Failed to allocate memory for modules");
 
     free_modules(&ms);
@@ -955,7 +955,7 @@ static bool load_modules_only(void) {
   for (size_t i = 0; i < ms.modules_count; i++) {
     const char *lib_path = ms.modules[i];
 
-    if (!csoloader_load(&zygisk_modules[zygisk_module_length].lib, lib_path)) {
+    if (!csoloader_load(&loaded_modules[loaded_module_count].lib, lib_path)) {
       LOGE("Failed to load module [%s]", lib_path);
 
       /* INFO: In case a module failed to load, update the list of available modules
@@ -963,30 +963,30 @@ static bool load_modules_only(void) {
            Zygote library and the available modules in ReZygiskd. */
       /* TODO: Update the list of modules for ReZygisk monitor, so that it can update
                  for WebUI. That is simply cosmetic, though. */
-      rezygiskd_remove_module(i);
+      daemon_remove_module(i);
 
       continue;
     }
 
-    void *entry = csoloader_get_symbol(&zygisk_modules[zygisk_module_length].lib, "zygisk_module_entry");
+    void *entry = csoloader_get_symbol(&loaded_modules[loaded_module_count].lib, "zygisk_module_entry");
     if (!entry) {
       LOGE("Failed to find entry point in module [%s]", lib_path);
 
-      csoloader_unload(&zygisk_modules[zygisk_module_length].lib);
+      csoloader_unload(&loaded_modules[loaded_module_count].lib);
 
-      rezygiskd_remove_module(i);
+      daemon_remove_module(i);
 
       continue;
     }
 
-    zygisk_modules[zygisk_module_length].api.register_module = rezygisk_module_register;
-    zygisk_modules[zygisk_module_length].api.impl = ENCODE_ID((void *)zygisk_module_length);
-    zygisk_modules[zygisk_module_length].zygisk_module_entry = (void (*)(void *, void *))entry;
+    loaded_modules[loaded_module_count].api.register_module = module_register;
+    loaded_modules[loaded_module_count].api.impl = ENCODE_ID((void *)loaded_module_count);
+    loaded_modules[loaded_module_count].zygisk_module_entry = (void (*)(void *, void *))entry;
 
     LOGD("Loaded module [%s]. Entry: %p", lib_path, entry);
 
-    zygisk_modules[zygisk_module_length].unload = false;
-    zygisk_module_length++;
+    loaded_modules[loaded_module_count].unload = false;
+    loaded_module_count++;
   }
 
   free_modules(&ms);
@@ -995,11 +995,11 @@ static bool load_modules_only(void) {
 }
 
 static void rz_run_modules_pre(struct zygisk_context *ctx) {
-  for (size_t i = 0; i < zygisk_module_length; i++) {
-    rz_module_call_on_load(&zygisk_modules[i], ctx->env);
+  for (size_t i = 0; i < loaded_module_count; i++) {
+    rz_module_call_on_load(&loaded_modules[i], ctx->env);
 
-    if (FLAG_GET(ctx, APP_SPECIALIZE)) rz_module_call_pre_app_specialize(&zygisk_modules[i], ctx->args.app);
-    else if (FLAG_GET(ctx, SERVER_FORK_AND_SPECIALIZE)) rz_module_call_pre_server_specialize(&zygisk_modules[i], ctx->args.server);
+    if (FLAG_GET(ctx, APP_SPECIALIZE)) rz_module_call_pre_app_specialize(&loaded_modules[i], ctx->args.app);
+    else if (FLAG_GET(ctx, SERVER_FORK_AND_SPECIALIZE)) rz_module_call_pre_server_specialize(&loaded_modules[i], ctx->args.server);
   }
 }
 
@@ -1007,8 +1007,8 @@ static void rz_run_modules_post(struct zygisk_context *ctx) {
   FLAG_SET(ctx, POST_SPECIALIZE);
 
   size_t modules_unloaded = 0;
-  for (size_t i = 0; i < zygisk_module_length; i++) {
-    struct rezygisk_module *m = &zygisk_modules[i];
+  for (size_t i = 0; i < loaded_module_count; i++) {
+    struct rezygisk_module *m = &loaded_modules[i];
 
     if (FLAG_GET(ctx, APP_SPECIALIZE)) rz_module_call_post_app_specialize(m, ctx->args.app);
     else if (FLAG_GET(ctx, SERVER_FORK_AND_SPECIALIZE)) rz_module_call_post_server_specialize(m, ctx->args.server);
@@ -1030,8 +1030,8 @@ static void rz_run_modules_post(struct zygisk_context *ctx) {
     modules_unloaded++;
   }
 
-  if (zygisk_module_length > 0)
-    LOGD("Modules unloaded: %zu/%zu", modules_unloaded, zygisk_module_length);
+  if (loaded_module_count > 0)
+    LOGD("Modules unloaded: %zu/%zu", modules_unloaded, loaded_module_count);
 }
 
 static void rz_app_specialize_pre(struct zygisk_context *ctx) {
@@ -1077,7 +1077,7 @@ static void rz_app_specialize_pre(struct zygisk_context *ctx) {
     (*ctx->env)->ReleaseStringUTFChars(ctx->env, *ctx->args.app->app_data_dir, data_dir);
   }
 
-  ctx->info_flags = rezygiskd_get_process_flags(uid, ctx->process);
+  ctx->info_flags = daemon_get_process_flags(uid, ctx->process);
   /* INFO: To ensure we are really using a clean mount namespace, we use
               the first process it as reference for clean mount namespace,
               before it even does something, so that it will be clean yet
@@ -1095,7 +1095,7 @@ static void rz_app_specialize_pre(struct zygisk_context *ctx) {
   }
 
   if ((ctx->info_flags & PROCESS_IS_MANAGER) == PROCESS_IS_MANAGER) {
-    LOGD("Manager process detected. Notifying that Zygisk has been enabled.");
+    LOGD("Manager process detected. Notifying that the module has been enabled.");
 
 
     /* INFO: This environment variable is related to Magisk Zygisk/Manager. It
@@ -1226,7 +1226,7 @@ static void rz_cleanup(struct zygisk_context *ctx) {
 
   if (!is_zygote_child(ctx)) return;
 
-  should_unmap_zygisk = true;
+  should_unmap_injection = true;
 
   /* INFO: Unhook JNI methods */
   for (size_t i = 0; i < jni_hook_list_count; i++) {
@@ -1236,7 +1236,7 @@ static void rz_cleanup(struct zygisk_context *ctx) {
       if (entry->methods_count > 0 && (*ctx->env)->RegisterNatives(ctx->env, jc, entry->methods, (jint)entry->methods_count) != 0) {
         LOGE("Failed to restore JNI hook of class [%s]", entry->class_name);
 
-        should_unmap_zygisk = false;
+        should_unmap_injection = false;
       }
 
       (*ctx->env)->DeleteLocalRef(ctx->env, jc);
@@ -1274,8 +1274,8 @@ static void rz_cleanup(struct zygisk_context *ctx) {
   }
 
   /* INFO: Strip out all API function pointers */
-  for (size_t i = 0; i < zygisk_module_length; i++) {
-    memset(&zygisk_modules[i], 0, sizeof(zygisk_modules[i]));
+  for (size_t i = 0; i < loaded_module_count; i++) {
+    memset(&loaded_modules[i], 0, sizeof(loaded_modules[i]));
   }
 
   enable_unloader = true;
@@ -1300,7 +1300,7 @@ static bool hook_unregister(const char *lib_name, const char *symbol, bool is_pr
   if (!(is_prefix ? plti_remove_hook_by_prefix : plti_remove_hook)(&plti_ctx, lib_name, symbol, backup)) {
     LOGE("Failed to unregister plt_hook \"%s\" with PLTI", symbol);
 
-    should_unmap_zygisk = false;
+    should_unmap_injection = false;
 
     return false;
   }
@@ -1349,7 +1349,7 @@ static void hook_unloader(void) {
     LOGE("Failed to load modules in hook_unloader");
   }
 
-  LOGD("ReZygisk unloader hooked successfully");
+  LOGD("Unloader hooked successfully");
 }
 
 static void unhook_functions(void) {

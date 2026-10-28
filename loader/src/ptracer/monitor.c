@@ -16,7 +16,9 @@
 
 #include "monitor.h"
 
-#define SOCKET_NAME "init_monitor"
+#ifndef SOCKET_NAME
+#error "SOCKET_NAME must come from IDENTITY_CFLAGS"
+#endif
 
 #define STOPPED_WITH(sig, event) (WIFSTOPPED(sigchld_status) && (sigchld_status >> 8 == ((sig) | ((event) << 8))))
 
@@ -42,7 +44,7 @@ enum ptracer_tracing_state {
 
 enum ptracer_tracing_state tracing_state = TRACING;
 
-struct rezygiskd_status {
+struct daemon_status {
   bool supported;
   bool zygote_injected;
   bool daemon_running;
@@ -51,7 +53,7 @@ struct rezygiskd_status {
   char *daemon_error_info;
 };
 
-struct rezygiskd_status status64 = {
+struct daemon_status status64 = {
   .supported = false,
   .zygote_injected = false,
   .daemon_running = false,
@@ -59,7 +61,7 @@ struct rezygiskd_status status64 = {
   .daemon_info = NULL,
   .daemon_error_info = NULL
 };
-struct rezygiskd_status status32 = {
+struct daemon_status status32 = {
   .supported = false,
   .zygote_injected = false,
   .daemon_running = false,
@@ -135,7 +137,7 @@ void monitor_events_loop() {
 
 int monitor_sock_fd;
 
-bool rezygiskd_listener_init() {
+bool daemon_listener_init() {
   monitor_sock_fd = socket(PF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
   if (monitor_sock_fd == -1) {
     PLOGE("socket create");
@@ -148,7 +150,7 @@ bool rezygiskd_listener_init() {
     .sun_path = { 0 }
   };
 
-  size_t sun_path_len = sprintf(addr.sun_path, "%s/%s", rezygiskd_get_path(), SOCKET_NAME);
+  size_t sun_path_len = sprintf(addr.sun_path, "%s/%s", daemon_get_path(), SOCKET_NAME);
 
   socklen_t socklen = sizeof(sa_family_t) + sun_path_len;
   if (bind(monitor_sock_fd, (struct sockaddr *)&addr, socklen) == -1) {
@@ -174,7 +176,7 @@ struct rzd_info_payload {
   char data[0];
 } __attribute__((packed));
 
-void rezygiskd_listener_callback() {
+void daemon_listener_callback() {
   while (1) {
     ssize_t dlen = recv(monitor_sock_fd, NULL, 0, MSG_PEEK | MSG_TRUNC);
     if (dlen == -1) {
@@ -274,7 +276,7 @@ void rezygiskd_listener_callback() {
       case ZYGOTE32_INJECTED: {
         LOGI("Received Zygote%s injected command", msg->cmd == ZYGOTE64_INJECTED ? "64" : "32");
 
-        struct rezygiskd_status *status = msg->cmd == ZYGOTE64_INJECTED ? &status64 : &status32;
+        struct daemon_status *status = msg->cmd == ZYGOTE64_INJECTED ? &status64 : &status32;
         status->zygote_injected = true;
 
         update_status(NULL);
@@ -283,7 +285,7 @@ void rezygiskd_listener_callback() {
       }
       case DAEMON64_SET_INFO:
       case DAEMON32_SET_INFO: {
-        const char *daemon_name = (msg->cmd == DAEMON64_SET_INFO ? "ReZygiskd64" : "ReZygiskd32");
+        const char *daemon_name = (msg->cmd == DAEMON64_SET_INFO ? "daemon64" : "daemon32");
 
         LOGD("Received %s info", daemon_name);
 
@@ -377,7 +379,7 @@ void rezygiskd_listener_callback() {
       }
       case DAEMON64_SET_ERROR_INFO:
       case DAEMON32_SET_ERROR_INFO: {
-        const char *daemon_name = (msg->cmd == DAEMON64_SET_ERROR_INFO ? "ReZygiskd64" : "ReZygiskd32");
+        const char *daemon_name = (msg->cmd == DAEMON64_SET_ERROR_INFO ? "daemon64" : "daemon32");
 
         LOGD("Received %s error info", daemon_name);
 
@@ -387,7 +389,7 @@ void rezygiskd_listener_callback() {
           break;
         }
 
-        struct rezygiskd_status *status = msg->cmd == DAEMON64_SET_ERROR_INFO ? &status64 : &status32;
+        struct daemon_status *status = msg->cmd == DAEMON64_SET_ERROR_INFO ? &status64 : &status32;
         if (status->daemon_error_info) {
           LOGD("freeing old %s error info", daemon_name);
 
@@ -413,7 +415,7 @@ void rezygiskd_listener_callback() {
   }
 }
 
-void rezygiskd_listener_stop() {
+void daemon_listener_stop() {
   if (monitor_sock_fd >= 0) close(monitor_sock_fd);
   monitor_sock_fd = -1;
 }
@@ -444,27 +446,27 @@ CREATE_ZYGOTE_START_COUNTER(64)
 CREATE_ZYGOTE_START_COUNTER(32)
 
 static bool ensure_daemon_created(bool is_64bit) {
-  struct rezygiskd_status *status = is_64bit ? &status64 : &status32;
+  struct daemon_status *status = is_64bit ? &status64 : &status32;
   if (status->daemon_pid != -1) {
-    LOGI("ReZygiskd%s already running", is_64bit ? "64" : "32");
+    LOGI("daemon%s already running", is_64bit ? "64" : "32");
 
     return status->daemon_running;
   }
 
   pid_t pid = fork();
   if (pid < 0) {
-    PLOGE("create ReZygiskd%s", is_64bit ? "64" : "32");
+    PLOGE("create daemon%s", is_64bit ? "64" : "32");
 
     return false;
   }
 
   if (pid == 0) {
-    char daemon_name[PATH_MAX] = "./bin/zygiskd";
+    char daemon_name[PATH_MAX] = "./bin/" DAEMON_BIN;
     strcat(daemon_name, is_64bit ? "64" : "32");
 
     execl(daemon_name, daemon_name, NULL);
 
-    PLOGE("exec ReZygiskd%s failed", is_64bit ? "64" : "32");
+    PLOGE("exec daemon%s failed", is_64bit ? "64" : "32");
 
     exit(1);
   }
@@ -502,7 +504,7 @@ static bool ensure_daemon_created(bool is_64bit) {
 
 #define PRE_INJECT(abi, is_64)                                        \
   if (strcmp(program, APP_PROCESS_ ## abi) == 0) {                    \
-    tracer = "./bin/zygisk-ptrace" # abi;                             \
+    tracer = "./bin/" PTRACER_BIN # abi;                             \
     is_tango = false;                                                 \
                                                                       \
     if (should_stop_inject ## abi()) {                                \
@@ -516,10 +518,10 @@ static bool ensure_daemon_created(bool is_64bit) {
     }                                                                 \
                                                                       \
     if (!ensure_daemon_created(is_64)) {                              \
-      LOGW("ReZygiskd " #abi "-bit not running, stop injecting");     \
+      LOGW("daemon " #abi "-bit not running, stop injecting");     \
                                                                       \
       tracing_state = STOPPING;                                       \
-      monitor_stop_reason = "ReZygiskd not running";                  \
+      monitor_stop_reason = "daemon not running";                  \
       ptrace(PTRACE_INTERRUPT, 1, 0, 0);                              \
                                                                       \
       break;                                                          \
@@ -528,7 +530,7 @@ static bool ensure_daemon_created(bool is_64bit) {
 
 #define PRE_INJECT_TANGO                                           \
   if (strcmp(program, "/system_ext/bin/tango_translator") == 0) {  \
-    tracer = "./bin/zygisk-ptrace32";                              \
+    tracer = "./bin/" PTRACER_BIN "32";                              \
     is_tango = true;                                               \
                                                                    \
     if (should_stop_inject32()) {                                  \
@@ -542,10 +544,10 @@ static bool ensure_daemon_created(bool is_64bit) {
     }                                                              \
                                                                    \
     if (!ensure_daemon_created(false)) {                           \
-      LOGW("ReZygiskd 32-bit not running, stop injecting");        \
+      LOGW("daemon 32-bit not running, stop injecting");        \
                                                                    \
       tracing_state = STOPPING;                                    \
-      monitor_stop_reason = "ReZygiskd not running";               \
+      monitor_stop_reason = "daemon not running";               \
       ptrace(PTRACE_INTERRUPT, 1, 0, 0);                           \
                                                                    \
       break;                                                       \
@@ -568,7 +570,7 @@ static bool claim_init_tracer() {
     if (errno == EPERM) {
       LOGW("Another process is already tracing init");
 
-      update_status("❌ Multiple Zygisks functioning");
+      update_status("❌ Multiple instances functioning");
     } else {
       PLOGE("failed to seize init");
     }
@@ -825,7 +827,7 @@ static char post_section[1024];
 
 #define WRITE_STATUS_ABI(suffix)                                                     \
   if (status ## suffix.supported) {                                                  \
-    strcat(status_text, ", ReZygisk " # suffix "-bit: ");                            \
+    strcat(status_text, ", module " # suffix "-bit: ");                            \
                                                                                      \
     if (tracing_state != TRACING) strcat(status_text, "❌");                         \
     else if (status ## suffix.zygote_injected && status ## suffix.daemon_running)    \
@@ -834,17 +836,17 @@ static char post_section[1024];
                                                                                      \
     if (!status ## suffix.daemon_running) {                                          \
       if (status ## suffix.daemon_error_info) {                                      \
-        strcat(status_text, "(ReZygiskd: ");                                         \
+        strcat(status_text, "(daemon: ");                                         \
         strcat(status_text, status ## suffix.daemon_error_info);                     \
         strcat(status_text, ")");                                                    \
       } else {                                                                       \
-        strcat(status_text, "(ReZygiskd: not running)");                             \
+        strcat(status_text, "(daemon: not running)");                             \
       }                                                                              \
     }                                                                                \
   }
 
 static bool update_status(const char *message) {
-  FILE *prop = fopen("/data/adb/modules/rezygisk/module.prop", "w");
+  FILE *prop = fopen("/data/adb/modules/" MOD_ID "/module.prop", "w");
   if (prop == NULL) {
     PLOGE("failed to open prop");
 
@@ -885,7 +887,7 @@ static bool update_status(const char *message) {
   fclose(prop);
 
   if (environment_information64.root_impl || environment_information32.root_impl) {
-    FILE *json = fopen("/data/adb/rezygisk/state.json", "w");
+    FILE *json = fopen(TMP_PATH "/" STATE_NAME, "w");
     if (json == NULL) {
       PLOGE("failed to open state.json");
 
@@ -958,7 +960,7 @@ static bool update_status(const char *message) {
 
     fclose(json);
   } else {
-    if (remove("/data/adb/rezygisk/state.json") == -1) {
+    if (remove(TMP_PATH "/" STATE_NAME) == -1) {
       PLOGE("failed to remove state.json");
     }
   }
@@ -969,7 +971,7 @@ static bool update_status(const char *message) {
 }
 
 static bool prepare_environment() {
-  FILE *orig_prop = fopen("/data/adb/modules/rezygisk/module.prop", "r");
+  FILE *orig_prop = fopen("/data/adb/modules/" MOD_ID "/module.prop", "r");
   if (orig_prop == NULL) {
     PLOGE("failed to open orig prop");
 
@@ -998,7 +1000,7 @@ static bool prepare_environment() {
 }
 
 void init_monitor() {
-  LOGI("ReZygisk %s", ZKSU_VERSION);
+  LOGI("Monitor %s", ZKSU_VERSION);
 
   if (!prepare_environment()) exit(1);
 
@@ -1006,7 +1008,7 @@ void init_monitor() {
 
   monitor_events_init();
 
-  if (!rezygiskd_listener_init()) {
+  if (!daemon_listener_init()) {
     LOGE("failed to create socket");
 
     close(monitor_epoll_fd);
@@ -1014,12 +1016,12 @@ void init_monitor() {
     exit(1);
   }
 
-  monitor_events_register_event(rezygiskd_listener_callback, monitor_sock_fd, EPOLLIN | EPOLLET);
+  monitor_events_register_event(daemon_listener_callback, monitor_sock_fd, EPOLLIN | EPOLLET);
 
   if (sigchld_listener_init() == false) {
     LOGE("failed to create signalfd");
 
-    rezygiskd_listener_stop();
+    daemon_listener_stop();
     close(monitor_epoll_fd);
 
     exit(1);
@@ -1031,7 +1033,7 @@ void init_monitor() {
 
   /* INFO: Once it stops the loop, we cannot access the epool data, so we
              either manually call the stops or save to a structure. */
-  rezygiskd_listener_stop();
+  daemon_listener_stop();
   sigchld_listener_stop();
 
   if (status64.daemon_info) free(status64.daemon_info);
@@ -1055,10 +1057,10 @@ void init_monitor() {
     free((void *)environment_information32.modules);
   }
 
-  LOGI("Terminating ReZygisk monitor");
+  LOGI("Terminating monitor");
 }
 
-int send_control_command(enum rezygiskd_command cmd) {
+int send_control_command(enum daemon_command cmd) {
   int sockfd = socket(PF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
   if (sockfd == -1) return -1;
 
@@ -1067,7 +1069,7 @@ int send_control_command(enum rezygiskd_command cmd) {
     .sun_path = { 0 }
   };
 
-  size_t sun_path_len = snprintf(addr.sun_path, sizeof(addr.sun_path), "%s/%s", rezygiskd_get_path(), SOCKET_NAME);
+  size_t sun_path_len = snprintf(addr.sun_path, sizeof(addr.sun_path), "%s/%s", daemon_get_path(), SOCKET_NAME);
 
   socklen_t socklen = sizeof(sa_family_t) + sun_path_len;
 
