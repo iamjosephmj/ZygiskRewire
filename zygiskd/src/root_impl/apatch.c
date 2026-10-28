@@ -177,9 +177,9 @@ bool apatch_uid_should_umount(uid_t uid, const char *const process) {
   }
 
   /* INFO: Isolated services have different UIDs than the main app, and
-             while libzygisk.so has code to send the UID of the app related
-             to the isolated service, we add this so that in case it fails,
-             this should avoid it pass through as Mounted.
+             while the injected library has code to send the UID of the app
+             related to the isolated service, we add this so that in case it
+             fails, this should avoid it pass through as Mounted.
   */
   if (IS_ISOLATED_SERVICE(uid)) {
     size_t targeted_process_length = strlen(process);

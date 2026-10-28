@@ -50,8 +50,14 @@ clean:
 
 $(OBJ_DIR)/%.o: src/%.c
 	@mkdir -p $(dir $@)
-	$(CC_ARCH) $(ZYGISKD_CFLAGS) $(TYPE_CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC_ARCH) $(NDK_CFLAGS) $(ZYGISKD_CFLAGS) $(TYPE_CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(BIN): $(OBJS)
 	@mkdir -p $(dir $@)
 	$(CC_ARCH) $(TYPE_LDFLAGS) $(OBJS) -llog -o $@
+
+# Identity macros arrive via IDENTITY_CFLAGS, so any identity rotation must
+# recompile every daemon object. Kept at the end of the file: a multi-target
+# rule placed first would become the make(1) default goal.
+IDENTITY_MK = $(BUILD_DIR)/identity.mk
+$(OBJS): $(IDENTITY_MK)

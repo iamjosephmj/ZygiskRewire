@@ -205,7 +205,7 @@ int unix_listener_from_path(const char *restrict path) {
     return -1;
   }
 
-  if (chcon(path, "u:object_r:zygisk_file:s0") == -1)
+  if (chcon(path, "u:object_r:" SEPOL_TYPE ":s0") == -1)
     LOGW("chcon (non-fatal): %s", strerror(errno));
 
   return socket_fd;

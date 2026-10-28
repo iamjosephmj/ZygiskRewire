@@ -19,7 +19,7 @@
 #endif
 
 #ifndef LOG_TAG
-  #define LOG_TAG "zygiskd" LP_SELECT("32", "64")
+  #define LOG_TAG TAG LP_SELECT("32", "64")
 #endif
 
 #define LOGI(...)                                              \

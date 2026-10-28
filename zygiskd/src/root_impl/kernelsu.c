@@ -74,7 +74,7 @@ void ksu_get_existence(struct root_impl_state *state) {
   get_property("ro.board.platform", platform);
 
   /* INFO: On Waydroid, the SYS_reboot call will trigger a SIGSYS signal, resulting
-             in the crash of ReZygiskd. To avoid that, read the platform property
+             in the crash of the daemon. To avoid that, read the platform property
              and not try to call KernelSU v3 interface, jumping to KernelSU v1
              interface which doesn't require the SYS_reboot call. */
   if (strcmp(platform, "waydroid") == 0)
