@@ -1,6 +1,6 @@
 #ifndef ZYGISKD_H
 #define ZYGISKD_H
 
-void zygiskd_start(char *restrict argv[]);
+void daemon_start(void);
 
 #endif /* ZYGISKD_H */

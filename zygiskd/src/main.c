@@ -8,12 +8,12 @@
 #include "utils.h"
 
 int main(int argc, char *argv[]) {
-  LOGI("Welcome to ReZygiskd%s", LP_SELECT("32", "64"));
+  LOGI("daemon %s started", LP_SELECT("32", "64"));
 
   if (argc > 1) {
     if (strcmp(argv[1], "companion") == 0) {
       if (argc < 3) {
-        LOGI("Usage: zygiskd companion <fd>");
+        LOGI("Usage: " DAEMON_BIN " companion <fd>");
 
         return 1;
       }
@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
     }
 
     else if (strcmp(argv[1], "version") == 0) {
-      LOGI("ReZygisk Daemon %s", ZKSU_VERSION);
+      LOGI("daemon %s", ZKSU_VERSION);
 
       return 0;
     }
@@ -45,7 +45,7 @@ int main(int argc, char *argv[]) {
     }
 
     else {
-      LOGI("Usage: zygiskd [companion|version|root]");
+      LOGI("Usage: " DAEMON_BIN " [companion|version|root]");
 
       return 0;
     }
@@ -57,7 +57,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
   root_impls_setup();
-  zygiskd_start(argv);
+  daemon_start();
 
   return 0;
 }

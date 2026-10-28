@@ -889,7 +889,7 @@ static bool update_status(const char *message) {
   if (environment_information64.root_impl || environment_information32.root_impl) {
     FILE *json = fopen(TMP_PATH "/" STATE_NAME, "w");
     if (json == NULL) {
-      PLOGE("failed to open state.json");
+      PLOGE("failed to open " STATE_NAME);
 
       return false;
     }
@@ -909,7 +909,7 @@ static bool update_status(const char *message) {
 
 
     if (status64.supported || status32.supported) {
-      fprintf(json, "  \"rezygiskd\": {\n");
+      fprintf(json, "  \"" CP_BASE "_st\": {\n");
       if (status64.supported) {
         fprintf(json, "    \"64\": {\n");
         fprintf(json, "      \"state\": %d,\n", status64.daemon_running);
@@ -961,7 +961,7 @@ static bool update_status(const char *message) {
     fclose(json);
   } else {
     if (remove(TMP_PATH "/" STATE_NAME) == -1) {
-      PLOGE("failed to remove state.json");
+      PLOGE("failed to remove " STATE_NAME);
     }
   }
 

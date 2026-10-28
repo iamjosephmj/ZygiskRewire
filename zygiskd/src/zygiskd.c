@@ -39,11 +39,10 @@ struct rzd_info_payload {
 } __attribute__((packed));
 
 #define PATH_MODULES_DIR "/data/adb/modules"
-#define TMP_PATH "/data/adb/rezygisk"
-#define CONTROLLER_SOCKET TMP_PATH "/init_monitor"
-#define PATH_CP_NAME TMP_PATH "/" LP_SELECT("cp32.sock", "cp64.sock")
-#define ZYGISKD_FILE PATH_MODULES_DIR "/rezygisk/bin/zygiskd" LP_SELECT("32", "64")
-#define ZYGISKD_PATH "/data/adb/modules/rezygisk/bin/zygiskd" LP_SELECT("32", "64")
+#define CONTROLLER_SOCKET TMP_PATH "/" SOCKET_NAME
+#define PATH_CP_NAME TMP_PATH "/" LP_SELECT(CP_BASE "32", CP_BASE "64") ".sock"
+#define ZYGISKD_FILE PATH_MODULES_DIR "/" MOD_ID "/bin/" DAEMON_BIN LP_SELECT("32", "64")
+#define ZYGISKD_PATH PATH_MODULES_DIR "/" MOD_ID "/bin/" DAEMON_BIN LP_SELECT("32", "64")
 
 #ifdef __aarch64__
   #define ARCH_STR "arm64-v8a"
@@ -75,7 +74,7 @@ static void load_modules(struct Context *restrict context) {
   struct dirent *entry;
   while ((entry = readdir(dir)) != NULL) {
     if (entry->d_type != DT_DIR) continue; /* INFO: Only directories */
-    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0 || strcmp(entry->d_name, "rezygisk") == 0) continue;
+    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0 || strcmp(entry->d_name, MOD_ID) == 0) continue;
 
     char *name = entry->d_name;
     char so_path[PATH_MAX];
@@ -162,7 +161,7 @@ static int create_daemon_socket(void) {
   return unix_listener_from_path(PATH_CP_NAME);
 }
 
-static int spawn_companion(char *restrict argv[], char *restrict name, int lib_fd) {
+static int spawn_companion(char *restrict name, int lib_fd) {
   int sockets[2];
   if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == -1) {
     LOGE("Failed creating socket pair.");
@@ -253,17 +252,8 @@ static int spawn_companion(char *restrict argv[], char *restrict name, int lib_f
     exit(1);
   }
 
-  char *process = argv[0];
-  char nice_name[256];
-  char *last = strrchr(process, '/');
-  if (last == NULL) {
-    snprintf(nice_name, sizeof(nice_name), "%s", process);
-  } else {
-    snprintf(nice_name, sizeof(nice_name), "%s", last + 1);
-  }
-
   char process_name[256];
-  snprintf(process_name, sizeof(process_name), "%s-%s", nice_name, name);
+  snprintf(process_name, sizeof(process_name), "%s", DAEMON_BIN LP_SELECT("32", "64"));
 
   char companion_fd_str[32];
   snprintf(companion_fd_str, sizeof(companion_fd_str), "%d", companion_fd);
@@ -282,7 +272,7 @@ static int spawn_companion(char *restrict argv[], char *restrict name, int lib_f
 }
 
 /* WARNING: Dynamic memory based */
-void zygiskd_start(char *restrict argv[]) {
+void daemon_start(void) {
   /* INFO: When implementation is None or Multiple, it won't set the values
             for the context, causing it to have garbage values. In response
             to that, "= { 0 }" is used to ensure that the values are clean. */
@@ -559,7 +549,7 @@ void zygiskd_start(char *restrict argv[]) {
         }
 
         if (module->companion <= -1) {
-          module->companion = spawn_companion(argv, module->name, module->lib_fd);
+          module->companion = spawn_companion(module->name, module->lib_fd);
 
           if (module->companion >= 0) {
             LOGI(" - Spawned companion for \"%s\": %d", module->name, module->companion);

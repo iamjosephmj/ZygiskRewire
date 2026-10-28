@@ -12,7 +12,7 @@
 #include <pthread.h>
 #include <unistd.h>
 
-#define LOG_TAG "zygiskd-companion" LP_SELECT("32", "64")
+#define LOG_TAG TAG "-comp" LP_SELECT("32", "64")
 
 #include "utils.h"
 
@@ -110,14 +110,14 @@ void companion_entry(int fd) {
     LOGE(" - No companion module entry for module: %s", name);
 
     ret = write_uint8_t(fd, 0);
-    ASSURE_SIZE_WRITE("ZygiskdCompanion", "module_entry", ret, sizeof(uint8_t), goto cleanup);
+    ASSURE_SIZE_WRITE("Companion", "module_entry", ret, sizeof(uint8_t), goto cleanup);
 
     goto cleanup;
   } else {
     LOGI(" - Module entry found");
 
     ret = write_uint8_t(fd, 1);
-    ASSURE_SIZE_WRITE("ZygiskdCompanion", "module_entry", ret, sizeof(uint8_t), goto cleanup);
+    ASSURE_SIZE_WRITE("Companion", "module_entry", ret, sizeof(uint8_t), goto cleanup);
   }
 
   struct sigaction sa = { .sa_handler = SIG_IGN };
@@ -153,7 +153,7 @@ void companion_entry(int fd) {
 
     ret = write_uint8_t(client_fd, 1);
     if (ret != sizeof(uint8_t)) {
-      LOGE("Failed to send client_fd in ZygiskdCompanion: Expected %zu, got %zd", sizeof(uint8_t), ret);
+      LOGE("Failed to send client_fd in Companion: Expected %zu, got %zd", sizeof(uint8_t), ret);
 
       free(args);
       close(client_fd);
