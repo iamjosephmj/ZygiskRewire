@@ -14,7 +14,8 @@ MIN_KSUD_VERSION ?= 11425
 MIN_MAGISK_VERSION ?= 26402
 
 MODULE_ID ?= rezygisk
-MODULE_NAME ?= ReZygisk
+# Neutral distribution name: the zip filename must carry no identifying token.
+MODULE_NAME ?= SysConfig
 
 IDENTITY_MK ?= $(ROOT_DIR)/build/identity.mk
 # 'make identity' must be able to bootstrap a missing identity.mk, and 'clean'

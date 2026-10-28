@@ -13,7 +13,9 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
 ENV_FILE="module/identity.env"
-MK_FILE="build/identity.mk"
+# Alternate build roots (BUILD_DIR) must render from their own identity.mk;
+# the Makefile passes IDENTITY_MK for those, plain builds keep the default.
+MK_FILE="${IDENTITY_MK:-build/identity.mk}"
 [ -f "$ENV_FILE" ] || scripts/gen_identity.sh build
 # shellcheck disable=SC1090
 source "$ENV_FILE"

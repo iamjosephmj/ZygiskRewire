@@ -105,7 +105,7 @@ $(MODULE_DONE): $(LOADER_DONE) $(ZYGISKD_DONE) $(BUILD_DIR)/identity.mk $(MODULE
 	done
 
 	@echo "Rendering module files from per-build identity..."
-	@bash scripts/render_module.sh                                        \
+	@IDENTITY_MK="$(BUILD_DIR)/identity.mk" bash scripts/render_module.sh \
 		$(MODULE_OUT)/module.prop                                           \
 		$(MODULE_OUT)/sepolicy.rule                                         \
 		$(MODULE_OUT)/$$(sed -n 's/^ID_MOD_ID := //p' $(BUILD_DIR)/identity.mk).sh \
@@ -127,7 +127,7 @@ $(MODULE_DONE): $(LOADER_DONE) $(ZYGISKD_DONE) $(BUILD_DIR)/identity.mk $(MODULE
 
 	@echo "Copying webroot..."
 	@cp -r webroot $(MODULE_OUT)/webroot
-	@bash scripts/render_module.sh $$(grep -rl -- '@@' $(MODULE_OUT)/webroot 2>/dev/null || true)
+	@IDENTITY_MK="$(BUILD_DIR)/identity.mk" bash scripts/render_module.sh $$(grep -rl -- '@@' $(MODULE_OUT)/webroot 2>/dev/null || true)
 
 	@if [ -f module/private_key ]; then                                                  \
 		echo "Signing module...";                                                        \
