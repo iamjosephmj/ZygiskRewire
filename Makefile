@@ -27,10 +27,10 @@ LOADER_DONE = $(OBJ_DIR)/loader/.done
 ZYGISKD_DONE = $(OBJ_DIR)/zygiskd/.done
 MODULE_DONE = $(BUILD_DIR)/module-$(BUILD_TYPE).done
 
-LOADER_INPUTS = common.mk loader/Makefile \
+LOADER_INPUTS = common.mk $(ROOT_DIR)/build/identity.mk loader/Makefile \
         $(shell find loader/src -type f | sort)
 
-ZYGISKD_INPUTS = common.mk zygiskd/Makefile \
+ZYGISKD_INPUTS = common.mk $(ROOT_DIR)/build/identity.mk zygiskd/Makefile \
         $(shell find zygiskd/src -type f | sort)
 
 MODULE_INPUTS = scripts/sign.py \

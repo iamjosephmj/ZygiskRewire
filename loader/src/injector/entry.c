@@ -7,7 +7,7 @@
 
 __attribute__((visibility("default")))
 void entry(void *addr, size_t size, int tango_flag) {
-  LOGD("ReZygisk%s library injected, version %s", tango_flag ? " [TANGO]" : "", ZKSU_VERSION);
+  LOGD("%s%s library injected, version %s", TAG, tango_flag ? " [TANGO]" : "", ZKSU_VERSION);
 
   start_addr = addr;
   block_size = size;
@@ -22,11 +22,11 @@ void entry(void *addr, size_t size, int tango_flag) {
     perform_ptrace_message_clear();
   }
 
-  if (!rezygiskd_zygote_injected()) {
-    LOGE("ReZygiskd is not running");
+  if (!daemon_zygote_injected()) {
+    LOGE("daemon is not running");
 
     return;
   }
 
-  LOGD("Zygisk library execution done, addr: %p, size: %zu", addr, size);
+  LOGD("Injected library execution done, addr: %p, size: %zu", addr, size);
 }

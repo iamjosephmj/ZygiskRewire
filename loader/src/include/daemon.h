@@ -5,7 +5,7 @@
 
 #include <unistd.h>
 
-enum rezygiskd_actions {
+enum daemon_actions {
   ZygoteInjected,
   GetProcessFlags,
   GetInfo,
@@ -17,7 +17,7 @@ enum rezygiskd_actions {
   RemoveModule
 };
 
-struct zygisk_modules {
+struct loaded_modules {
   char **modules;
   size_t modules_count;
 };
@@ -29,8 +29,8 @@ enum root_impl {
   ROOT_IMPL_MAGISK
 };
 
-struct rezygisk_info {
-  struct zygisk_modules modules;
+struct daemon_info {
+  struct loaded_modules modules;
   enum root_impl root_impl;
   pid_t pid;
   bool running;
@@ -41,32 +41,34 @@ enum mount_namespace_state {
   Mounted
 };
 
-#define TMP_PATH "/data/adb/rezygisk"
+#ifndef TMP_PATH
+#error "TMP_PATH must come from IDENTITY_CFLAGS"
+#endif
 
-static inline const char *rezygiskd_get_path() {
+static inline const char *daemon_get_path() {
   return TMP_PATH;
 }
 
-bool rezygiskd_zygote_injected();
+bool daemon_zygote_injected();
 
-uint32_t rezygiskd_get_process_flags(uid_t uid, const char *const process);
+uint32_t daemon_get_process_flags(uid_t uid, const char *const process);
 
-void rezygiskd_get_info(struct rezygisk_info *info);
+void daemon_get_info(struct daemon_info *info);
 
-void free_rezygisk_info(struct rezygisk_info *info);
+void free_daemon_info(struct daemon_info *info);
 
-bool rezygiskd_read_modules(struct zygisk_modules *modules);
+bool daemon_read_modules(struct loaded_modules *modules);
 
-void free_modules(struct zygisk_modules *modules);
+void free_modules(struct loaded_modules *modules);
 
-int rezygiskd_connect_companion(size_t index);
+int daemon_connect_companion(size_t index);
 
-int rezygiskd_get_module_dir(size_t index);
+int daemon_get_module_dir(size_t index);
 
-void rezygiskd_zygote_restart();
+void daemon_zygote_restart();
 
-bool rezygiskd_update_mns(enum mount_namespace_state nms_state, char *buf, size_t buf_size);
+bool daemon_update_mns(enum mount_namespace_state nms_state, char *buf, size_t buf_size);
 
-bool rezygiskd_remove_module(size_t index);
+bool daemon_remove_module(size_t index);
 
 #endif /* DAEMON_H */

@@ -37,6 +37,7 @@ COMMON_OBJS = $(patsubst src/common/%.c,$(OBJ_DIR)/common/%.o,$(COMMON_SRCS))
 INJECTOR_OBJS = $(patsubst src/injector/%.c,$(OBJ_DIR)/injector/%.o,$(INJECTOR_SRCS))
 PTRACER_OBJS = $(patsubst src/ptracer/%.c,$(OBJ_DIR)/ptracer/%.o,$(PTRACER_SRCS))
 
+
 PLTI_LIB = $(BUILD_DIR)/obj/$(BUILD_TYPE)/plti/$(ARCH)/libplti.a
 CSOLOADER_LIB = $(BUILD_DIR)/obj/$(BUILD_TYPE)/csoloader/$(ARCH)/libcsoloader.a
 
@@ -102,7 +103,7 @@ $(LIBCOMMON): $(COMMON_OBJS)
 
 $(LIBZYGISK): $(INJECTOR_OBJS) $(LIBCOMMON) $(PLTI_LIB) $(CSOLOADER_LIB)
 	@mkdir -p $(dir $@)
-	$(CC_ARCH) -fPIC -shared -Wl,-soname,libzygisk.so              \
+	$(CC_ARCH) -fPIC -shared -Wl,-soname,$(ID_LIB_NAME)              \
 		$(COMMON_LDFLAGS) $(TYPE_LDFLAGS) -nostartfiles            \
 		$(INJECTOR_OBJS) $(LIBCOMMON) $(PLTI_LIB) $(CSOLOADER_LIB) \
 		-llog -lm -o $@
@@ -121,3 +122,9 @@ $(LIBPTRACE_STRIPPED): $(LIBPTRACE)
 	@mkdir -p $(dir $@)
 	cp $< $@
 	$(STRIP) --strip-all $@
+
+# Identity macros arrive via IDENTITY_CFLAGS, so any identity rotation must
+# recompile every loader object. Kept at the end of the file: a multi-target
+# rule placed first would become the make(1) default goal.
+IDENTITY_MK = $(BUILD_DIR)/identity.mk
+$(COMMON_OBJS) $(INJECTOR_OBJS) $(PTRACER_OBJS): $(IDENTITY_MK)

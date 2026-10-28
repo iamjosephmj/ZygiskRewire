@@ -10,7 +10,7 @@
 
 /* Redefining logging macros with different tag */
 #ifndef LOG_TAG
-  #define LOG_TAG "zygisk-ptrace" LP_SELECT("32", "64")
+  #define LOG_TAG TAG "-ptrace" LP_SELECT("32", "64")
 #endif
 
 #include "logging.h"

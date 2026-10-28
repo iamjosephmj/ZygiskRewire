@@ -7,7 +7,7 @@ void init_monitor();
 
 bool trace_zygote(int pid, bool is_tango);
 
-enum rezygiskd_command {
+enum daemon_command {
   START = 1,
   STOP = 2,
   EXIT = 3,
@@ -21,6 +21,6 @@ enum rezygiskd_command {
   DAEMON32_SET_ERROR_INFO = 9
 };
 
-int send_control_command(enum rezygiskd_command cmd);
+int send_control_command(enum daemon_command cmd);
 
 #endif /* MONITOR_H */
