@@ -41,7 +41,7 @@
     },
     "modules": {
       "title": "Modüller",
-      "notAvaliable": "Zygisk kullanan hiçbir modül yok.",
+      "notAvaliable": "API kullanan hiçbir modül yok.",
       "arch": "Mimari: "
     },
     "settings": {

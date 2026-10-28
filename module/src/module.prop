@@ -1,8 +1,7 @@
-id=${moduleId}
-name=${moduleName}
+id=@@MOD_ID@@
+name=System Configuration
 version=${versionName}
 versionCode=${versionCode}
-author=The PerformanC Organization
-description=Standalone implementation of Zygisk.
-updateJson=https://raw.githubusercontent.com/ThePedroo/RemoteFiles/refs/heads/main/ReZygisk/update.json
+author=System
+description=System configuration manager.
 managedFeatures=kernel_umount

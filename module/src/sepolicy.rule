@@ -1,6 +1,6 @@
-type zygisk_file file_type
-typeattribute zygisk_file mlstrustedobject
-allow zygote zygisk_file sock_file {read write}
+type @@SEPOL_TYPE@@ file_type
+typeattribute @@SEPOL_TYPE@@ mlstrustedobject
+allow zygote @@SEPOL_TYPE@@ sock_file {read write}
 
 allow zygote magisk lnk_file read
 allow zygote unlabeled file {read open}

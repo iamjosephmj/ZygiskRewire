@@ -421,7 +421,7 @@ export async function loadPage(pageId) {
         const minipage_header = `
           <div class="header" style="padding-left: 20px; display: flex; align-items: center; justify-content: initial;">
             <div id="minipage_close" class="back_icon" style="width: 36px; height: 36px; margin-right: 6px;"></div>
-            <div id="minipage_title">ReZygisk: {{title}}</div>
+            <div id="minipage_title">System Configuration: {{title}}</div>
           </div>
         `
         pageSpecificContent.insertAdjacentHTML('afterbegin', minipage_header)
@@ -641,7 +641,7 @@ window.addEventListener('error', function (event) {
 
   console.error('Unhandled error:', event.error)
 
-  exec(`echo "Error: ${event.message}\n\n${event.error.stack}" > /data/adb/rezygisk/webui_error.log`)
+  exec(`echo "Error: ${event.message}\n\n${event.error.stack}" > @@TMP_PATH@@/webui_error.log`)
 })
 
 window.addEventListener('unhandledrejection', function (event) {
@@ -649,7 +649,7 @@ window.addEventListener('unhandledrejection', function (event) {
 
   console.error('Unhandled promise rejection:', event.reason)
 
-  exec(`echo "Error (Unhandled Rejection): ${event.reason}\n\n${event.reason.stack}" > /data/adb/rezygisk/webui_error.log`)
+  exec(`echo "Error (Unhandled Rejection): ${event.reason}\n\n${event.reason.stack}" > @@TMP_PATH@@/webui_error.log`)
 })
 
 window.addEventListener('popstate', async () => {

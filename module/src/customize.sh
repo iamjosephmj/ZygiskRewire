@@ -25,7 +25,7 @@ if [ "$BOOTMODE" ] && [ "$KSU" ]; then
   if [ "$(which magisk)" ]; then
     ui_print "*********************************************************"
     ui_print "! Multiple root implementation is NOT supported!"
-    ui_print "! Please uninstall Magisk before installing ReZygisk"
+    ui_print "! Please uninstall Magisk before installing"
     abort    "*********************************************************"
   fi
   elif [ "$BOOTMODE" ] && [ "$APATCH" ]; then
@@ -52,7 +52,7 @@ else
 fi
 
 VERSION=$(grep_prop version "${TMPDIR}/module.prop")
-ui_print "- Installing ReZygisk $VERSION"
+ui_print "- Installing $VERSION"
 
 # check android
 if [ "$API" -lt 25 ]; then
@@ -68,6 +68,17 @@ if [ "$ARCH" != "arm" ] && [ "$ARCH" != "arm64" ] && [ "$ARCH" != "x86" ] && [ "
 else
   ui_print "- Device platform: $ARCH"
 fi
+
+ui_print "- Extracting identity.env"
+unzip -o "$ZIPFILE" 'identity.env' -d "$TMPDIR" >&2
+if [ ! -f "$TMPDIR/identity.env" ]; then
+  ui_print "*********************************************************"
+  ui_print "! Unable to extract identity.env!"
+  ui_print "! This zip may be corrupted, please try downloading again"
+  abort    "*********************************************************"
+fi
+# shellcheck disable=SC1091
+. "$TMPDIR/identity.env"
 
 ui_print "- Extracting verify.sh"
 unzip -o "$ZIPFILE" 'verify.sh' -d "$TMPDIR" >&2
@@ -97,12 +108,12 @@ extract "$ZIPFILE" 'module.prop'     "$MODPATH"
 extract "$ZIPFILE" 'post-fs-data.sh' "$MODPATH"
 extract "$ZIPFILE" 'service.sh'      "$MODPATH"
 extract "$ZIPFILE" 'uninstall.sh'    "$MODPATH"
-extract "$ZIPFILE" 'rezygisk.sh' "/data/adb/service.d/"
+extract "$ZIPFILE" "${ID_MOD_ID}.sh" "/data/adb/service.d/"
 
 cp "$MODPATH/module.prop" "$MODPATH/module.prop.bak"
 
 chmod +x "$MODPATH/uninstall.sh"
-chmod +x "/data/adb/service.d/rezygisk.sh"
+chmod +x "/data/adb/service.d/${ID_MOD_ID}.sh"
 
 mv "$TMPDIR/sepolicy.rule" "$MODPATH"
 
@@ -148,44 +159,36 @@ fi
 if [ "$ARCH" = "x86" ] || [ "$ARCH" = "x64" ]; then
   if [ "$SUPPORTS_32BIT" = true ]; then
     ui_print "- Extracting x86 libraries"
-    extract "$ZIPFILE" 'bin/x86/zygiskd' "$MODPATH/bin" true
-    mv "$MODPATH/bin/zygiskd" "$MODPATH/bin/zygiskd32"
-    extract "$ZIPFILE" 'lib/x86/libzygisk.so' "$MODPATH/lib" true
-    extract "$ZIPFILE" 'lib/x86/libzygisk_ptrace.so' "$MODPATH/bin" true
-    mv "$MODPATH/bin/libzygisk_ptrace.so" "$MODPATH/bin/zygisk-ptrace32"
+    extract "$ZIPFILE" "bin/x86/${ID_DAEMON_BIN}32" "$MODPATH/bin" true
+    extract "$ZIPFILE" "lib/x86/${ID_LIB_NAME}" "$MODPATH/lib" true
+    extract "$ZIPFILE" "bin/x86/${ID_PTRACER_BIN}32" "$MODPATH/bin" true
 
     extract "$ZIPFILE" 'machikado.x86' "$MODPATH" true
   fi
 
   if [ "$SUPPORTS_64BIT" = true ]; then
     ui_print "- Extracting x64 libraries"
-    extract "$ZIPFILE" 'bin/x86_64/zygiskd' "$MODPATH/bin" true
-    mv "$MODPATH/bin/zygiskd" "$MODPATH/bin/zygiskd64"
-    extract "$ZIPFILE" 'lib/x86_64/libzygisk.so' "$MODPATH/lib64" true
-    extract "$ZIPFILE" 'lib/x86_64/libzygisk_ptrace.so' "$MODPATH/bin" true
-    mv "$MODPATH/bin/libzygisk_ptrace.so" "$MODPATH/bin/zygisk-ptrace64"
+    extract "$ZIPFILE" "bin/x86_64/${ID_DAEMON_BIN}64" "$MODPATH/bin" true
+    extract "$ZIPFILE" "lib/x86_64/${ID_LIB_NAME}" "$MODPATH/lib64" true
+    extract "$ZIPFILE" "bin/x86_64/${ID_PTRACER_BIN}64" "$MODPATH/bin" true
 
     extract "$ZIPFILE" 'machikado.x86_64' "$MODPATH" true
   fi
 else
   if [ "$SUPPORTS_32BIT" = true ]; then
     ui_print "- Extracting arm libraries"
-    extract "$ZIPFILE" 'bin/armeabi-v7a/zygiskd' "$MODPATH/bin" true
-    mv "$MODPATH/bin/zygiskd" "$MODPATH/bin/zygiskd32"
-    extract "$ZIPFILE" 'lib/armeabi-v7a/libzygisk.so' "$MODPATH/lib" true
-    extract "$ZIPFILE" 'lib/armeabi-v7a/libzygisk_ptrace.so' "$MODPATH/bin" true
-    mv "$MODPATH/bin/libzygisk_ptrace.so" "$MODPATH/bin/zygisk-ptrace32"
+    extract "$ZIPFILE" "bin/armeabi-v7a/${ID_DAEMON_BIN}32" "$MODPATH/bin" true
+    extract "$ZIPFILE" "lib/armeabi-v7a/${ID_LIB_NAME}" "$MODPATH/lib" true
+    extract "$ZIPFILE" "bin/armeabi-v7a/${ID_PTRACER_BIN}32" "$MODPATH/bin" true
 
     extract "$ZIPFILE" 'machikado.arm' "$MODPATH" true
   fi
 
   if [ "$SUPPORTS_64BIT" = true ]; then
     ui_print "- Extracting arm64 libraries"
-    extract "$ZIPFILE" 'bin/arm64-v8a/zygiskd' "$MODPATH/bin" true
-    mv "$MODPATH/bin/zygiskd" "$MODPATH/bin/zygiskd64"
-    extract "$ZIPFILE" 'lib/arm64-v8a/libzygisk.so' "$MODPATH/lib64" true
-    extract "$ZIPFILE" 'lib/arm64-v8a/libzygisk_ptrace.so' "$MODPATH/bin" true
-    mv "$MODPATH/bin/libzygisk_ptrace.so" "$MODPATH/bin/zygisk-ptrace64"
+    extract "$ZIPFILE" "bin/arm64-v8a/${ID_DAEMON_BIN}64" "$MODPATH/bin" true
+    extract "$ZIPFILE" "lib/arm64-v8a/${ID_LIB_NAME}" "$MODPATH/lib64" true
+    extract "$ZIPFILE" "bin/arm64-v8a/${ID_PTRACER_BIN}64" "$MODPATH/bin" true
 
     extract "$ZIPFILE" 'machikado.arm64' "$MODPATH" true
   fi
@@ -202,7 +205,7 @@ if [ "$SUPPORTS_64BIT" = true ]; then
   set_perm_recursive "$MODPATH/lib64" 0 0 0755 0644 u:object_r:system_lib_file:s0
 fi
 
-# If Huawei's Maple is enabled, system_server is created with a special way which is out of Zygisk's control
+# If Huawei's Maple is enabled, system_server is created with a special way which is out of the framework's control
 HUAWEI_MAPLE_ENABLED=$(grep_prop ro.maple.enable)
 if [ "$HUAWEI_MAPLE_ENABLED" == "1" ]; then
   ui_print "- Add ro.maple.enable=0"

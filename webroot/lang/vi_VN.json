@@ -41,7 +41,7 @@
     },
     "modules": {
       "title": "Mô Đun",
-      "notAvaliable": "Không có mô-đun nào sử dụng Zygisk ở đây!",
+      "notAvaliable": "Không có mô-đun nào sử dụng API ở đây!",
       "arch": "Kiến trúc: "
     },
     "settings": {

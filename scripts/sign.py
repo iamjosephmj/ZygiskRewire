@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Signing tool for ReZygisk module.
+Signing tool for the module.
 
 Implements module signing according to the following scheme:
   - machikado: per-architecture runtime file signatures
@@ -39,35 +39,47 @@ def file_sign_data(name: str, filepath: str) -> bytes:
 
 
 def sign_machikado(module_dir: str, sig_name: str, abi: str, is_64bit: bool, private_key_bytes: bytes, public_key_bytes: bytes):
-  """Sign a machikado file for a specific architecture."""
+  """Sign a machikado file for a specific architecture.
+
+  Per-build identity names come from the environment (exported by the Makefile
+  from build/identity.mk) so the signed file names match the staged binaries.
+  """
 
   root = Path(module_dir)
   arch_suffix = "64" if is_64bit else "32"
   path_suffix = "lib64" if is_64bit else "lib"
+
+  mod_id = os.environ.get("ID_MOD_ID")
+  lib_name = os.environ.get("ID_LIB_NAME")
+  daemon_bin = os.environ.get("ID_DAEMON_BIN")
+  ptracer_bin = os.environ.get("ID_PTRACER_BIN")
+  if not (mod_id and lib_name and daemon_bin and ptracer_bin):
+    print("error: ID_MOD_ID / ID_LIB_NAME / ID_DAEMON_BIN / ID_PTRACER_BIN must be exported (see build/identity.mk)")
+    sys.exit(1)
 
   # INFO: Create the list by sorting them based on their virtual/relative path,
   #         and use their virtual/relative path as the name in the signature.
   entries = []
 
   # INFO: The files where virtual = real
-  for fname in ["module.prop", "rezygisk.sh", "sepolicy.rule", "post-fs-data.sh", "service.sh", "uninstall.sh"]:
+  for fname in ["module.prop", f"{mod_id}.sh", "sepolicy.rule", "post-fs-data.sh", "service.sh", "uninstall.sh"]:
     vpath = root / fname
     entries.append((str(vpath), fname, str(vpath)))
 
-  # INFO: lib(64)/libzygisk.so -> lib/{abi}/libzygisk.so
-  vpath = root / path_suffix / "libzygisk.so"
-  rpath = root / "lib" / abi / "libzygisk.so"
-  entries.append((str(vpath), "libzygisk.so", str(rpath)))
+  # INFO: lib(64)/{lib_name} -> lib/{abi}/{lib_name}
+  vpath = root / path_suffix / lib_name
+  rpath = root / "lib" / abi / lib_name
+  entries.append((str(vpath), lib_name, str(rpath)))
 
-  # INFO: bin/zygisk-ptrace{32|64} -> lib/{abi}/libzygisk_ptrace.so
-  vpath = root / "bin" / f"zygisk-ptrace{arch_suffix}"
-  rpath = root / "lib" / abi / "libzygisk_ptrace.so"
-  entries.append((str(vpath), f"zygisk-ptrace{arch_suffix}", str(rpath)))
+  # INFO: bin/{ptracer_bin}{32|64} -> bin/{abi}/{ptracer_bin}{32|64}
+  vpath = root / "bin" / f"{ptracer_bin}{arch_suffix}"
+  rpath = root / "bin" / abi / f"{ptracer_bin}{arch_suffix}"
+  entries.append((str(vpath), f"{ptracer_bin}{arch_suffix}", str(rpath)))
 
-  # INFO: bin/zygiskd{32|64} -> bin/{abi}/zygiskd
-  vpath = root / "bin" / f"zygiskd{arch_suffix}"
-  rpath = root / "bin" / abi / "zygiskd"
-  entries.append((str(vpath), f"zygiskd{arch_suffix}", str(rpath)))
+  # INFO: bin/{daemon_bin}{32|64} -> bin/{abi}/{daemon_bin}{32|64}
+  vpath = root / "bin" / f"{daemon_bin}{arch_suffix}"
+  rpath = root / "bin" / abi / f"{daemon_bin}{arch_suffix}"
+  entries.append((str(vpath), f"{daemon_bin}{arch_suffix}", str(rpath)))
 
   # INFO: Sort by virtual path
   entries.sort(key=lambda e: e[0].replace("\\", "/"))

@@ -14,7 +14,7 @@ if [ "$(which magisk)" ]; then
     if [ -d "$file" ] && [ -d "$file/zygisk" ] && ! [ -f "$file/disable" ]; then
       if [ -f "$file/post-fs-data.sh" ]; then
         cd "$file"
-        log -p i -t "zygisk-sh" "Manually trigger post-fs-data.sh for $file"
+        log -p i -t "@@TAG@@-sh" "Manually trigger post-fs-data.sh for $file"
 
         # INFO: Don't propagate errexit
         set +e
@@ -36,12 +36,12 @@ create_sys_perm() {
   chcon u:object_r:system_file:s0 $1
 }
 
-export TMP_PATH=/data/adb/rezygisk
+export TMP_PATH=@@TMP_PATH@@
 rm -rf "$TMP_PATH"
 
 create_sys_perm $TMP_PATH
 
-# INFO: We need to cleanup the module.prop to its default state before ReZygisk writes to it
+# INFO: We need to cleanup the module.prop to its default state before the monitor writes to it
 #         so that it never duplicates the module status in there.
 cp "$MODDIR/module.prop.bak" "$MODDIR/module.prop"
 
@@ -58,11 +58,11 @@ else
 fi
 
 if [[ "$CPU_ABIS" == *"arm64-v8a"* || "$CPU_ABIS" == *"x86_64"* ]]; then
-  ./bin/zygisk-ptrace64 monitor &
+  ./bin/@@PTRACER_BIN@@64 monitor &
 else
   # INFO: Device is 32-bit only
 
-  ./bin/zygisk-ptrace32 monitor &
+  ./bin/@@PTRACER_BIN@@32 monitor &
 fi
 
 exit 0

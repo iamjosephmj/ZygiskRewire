@@ -41,7 +41,7 @@
     },
     "modules": {
       "title": "モジュール",
-      "notAvaliable": "Zygisk を使用するモジュールはありません。",
+      "notAvaliable": "API を使用するモジュールはありません。",
       "arch": "アーキテクチャ: "
     },
     "settings": {

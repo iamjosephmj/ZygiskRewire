@@ -19,7 +19,7 @@ export function setAmoled(chooseSet) {
 }
 
 function setData(mode) {
-  localStorage.setItem('/ReZygisk/theme', mode)
+  localStorage.setItem('/@@TAG@@/theme', mode)
 
   return mode
 }

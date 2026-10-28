@@ -8,26 +8,26 @@ let rzState = {
   expectedWorking: 0
 }
 
-async function _getReZygiskState() {
-  let stateCmd = await exec('/system/bin/cat /data/adb/rezygisk/state.json')
+async function _getModState() {
+  let stateCmd = await exec('/system/bin/cat @@TMP_PATH@@/@@STATE_NAME@@')
   if (stateCmd.errno !== 0) {
-    toast('Error getting state of ReZygisk!')
+    toast('Error getting state!')
 
     return;
   }
 
   try {
-    const ReZygiskState = JSON.parse(stateCmd.stdout)
-    return ReZygiskState
+    const ModState = JSON.parse(stateCmd.stdout)
+    return ModState
   } catch {
     return null;
   }
 }
 
 async function _getVersion() {
-  let moduleProp = await exec('cat /data/adb/modules/rezygisk/module.prop')
+  let moduleProp = await exec('cat /data/adb/modules/@@MOD_ID@@/module.prop')
   if (moduleProp.errno !== 0) {
-    toast('Error getting state of ReZygisk!')
+    toast('Error getting state!')
 
     return;
   }
@@ -68,7 +68,7 @@ async function _getAndroidVersion() {
   }
 }
 
-async function _updateDynamicElement(firstRun, ReZygiskState, strings) {
+async function _updateDynamicElement(firstRun, ModState, strings) {
   const rootCss = document.querySelector(':root')
   const rz_state = document.getElementById('rz_state')
   const rz_icon_state = document.getElementById('rz_icon_state')
@@ -88,7 +88,7 @@ async function _updateDynamicElement(firstRun, ReZygiskState, strings) {
     zygote_div.style.display = 'none'
   })
 
-  if (ReZygiskState == null) {
+  if (ModState == null) {
     rz_state.innerHTML = strings.unknown
     rz_icon_state.innerHTML = '<img class="brightc" src="assets/mark.svg">'
     document.getElementById('zygote_class').style.display = 'none'
@@ -98,11 +98,11 @@ async function _updateDynamicElement(firstRun, ReZygiskState, strings) {
   }
 
   if (firstRun) {
-    rzState.expectedWorking = ReZygiskState.zygote === undefined ? 0 : (ReZygiskState.zygote['64'] !== undefined ? 1 : 0) + (ReZygiskState.zygote['32'] !== undefined ? 1 : 0)
+    rzState.expectedWorking = ModState.zygote === undefined ? 0 : (ModState.zygote['64'] !== undefined ? 1 : 0) + (ModState.zygote['32'] !== undefined ? 1 : 0)
   }
 
-  if (ReZygiskState.zygote['64'] && ReZygiskState.zygote !== undefined) {
-    const zygote64 = ReZygiskState.zygote['64']
+  if (ModState.zygote['64'] && ModState.zygote !== undefined) {
+    const zygote64 = ModState.zygote['64']
 
     zygote_divs[0].style.display = 'block'
 
@@ -119,8 +119,8 @@ async function _updateDynamicElement(firstRun, ReZygiskState, strings) {
     }
   }
 
-  if (ReZygiskState.zygote && ReZygiskState.zygote['32'] !== undefined) {
-    const zygote32 = ReZygiskState.zygote['32']
+  if (ModState.zygote && ModState.zygote['32'] !== undefined) {
+    const zygote32 = ModState.zygote['32']
 
     zygote_divs[1].style.display = 'block'
 
@@ -152,7 +152,7 @@ async function _updateDynamicElement(firstRun, ReZygiskState, strings) {
     rz_icon_state.innerHTML = '<img class="brightc" src="assets/warn.svg">'
   }
 
-  if (ReZygiskState.zygote === undefined) {
+  if (ModState.zygote === undefined) {
     document.getElementById('zygote_class').style.display = 'none'
   }
 }
@@ -167,25 +167,25 @@ export async function loadOnceView() {
   document.getElementById('kernel_version_div').innerHTML = await _getKernelString()
   document.getElementById('android_version_div').innerHTML = await _getAndroidVersion()
 
-  const ReZygiskState = await _getReZygiskState()
+  const ModState = await _getModState()
   const strings = await getStrings(whichCurrentPage())
 
-  let root_impl = ReZygiskState ? ReZygiskState.root : null
+  let root_impl = ModState ? ModState.root : null
   if (!root_impl) root_impl = strings.unknown
   if (root_impl === 'Multiple') root_impl = strings.rootImpls.multiple
 
   document.getElementById('root_impl').innerHTML = root_impl
 
-  _updateDynamicElement(true, ReZygiskState, strings)
+  _updateDynamicElement(true, ModState, strings)
 
   /* INFO: This hides the throbber screen */
   loading_screen.style.display = 'none'
 }
 
 export async function onceViewAfterUpdate() {
-  const ReZygiskState = await _getReZygiskState()
+  const ModState = await _getModState()
   const strings = await getStrings(whichCurrentPage())
-  _updateDynamicElement(false, ReZygiskState, strings)
+  _updateDynamicElement(false, ModState, strings)
 }
 
 export async function load() {
