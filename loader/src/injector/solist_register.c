@@ -1,7 +1,17 @@
-/* INFO: Solist-consistency spike implementation.
-           Registers the anonymously mapped loader as a linker soinfo entry so
-           that dl_iterate_phdr reports it with the same /system overlay path
-           that /proc/<pid>/maps shows.
+/* INFO: Solist-consistency spike artifact — VERDICT OUTCOME.
+           COMPILED OUT BY DEFAULT (ZKSU_SOLIST_REGISTER defaults to 0): the
+           anchor this registration requires — the linker's solist head
+           variable ("solist"/"g_solist") — is a linker-internal C++
+           file-scope static, and statics are LOCAL symbols that never appear
+           in .dynsym. The dynsym-only runtime anchor below therefore cannot
+           resolve on any Android version; kept as the documented spike
+           artifact. See docs/superpowers/notes/phase3-solist-spike.md for
+           the verdict and the conditions a future activation must close.
+
+           If force-enabled (-DZKSU_SOLIST_REGISTER=1) with a working anchor,
+           it registers the anonymously mapped loader as a linker soinfo
+           entry so that dl_iterate_phdr reports it with the same /system
+           overlay path that /proc/<pid>/maps shows.
 
            Grounded structure (verified against AOSP bionic nougat..main):
              - do_dl_iterate_phdr walks "for (si = solist_get_head(); si;
@@ -49,9 +59,7 @@
 #include "misc.h"
 #include "solist_register.h"
 
-#ifndef ZKSU_SOLIST_REGISTER
-  #define ZKSU_SOLIST_REGISTER 1
-#endif
+#if ZKSU_SOLIST_REGISTER
 
 /* INFO: Same string the ptracer maps the loader from (Task 1): the maps path
            and the dl_iterate_phdr name must be byte-identical. */
@@ -486,11 +494,6 @@ static bool class_nonempty(const uint8_t *classes, size_t window, uint8_t bit) {
 /* INFO: ── main entry ────────────────────────────────────────────────────── */
 
 bool solist_register_library(uintptr_t lib_base, size_t lib_size) {
-#if !ZKSU_SOLIST_REGISTER
-  (void) lib_base; (void) lib_size;
-
-  return false;
-#else
   if (lib_base == 0 || lib_size == 0) return false;
 
   struct maps_info *maps = parse_maps_safe("self");
@@ -821,5 +824,15 @@ bool solist_register_library(uintptr_t lib_base, size_t lib_size) {
   free_maps(maps);
 
   return true;
-#endif
 }
+
+#else /* !ZKSU_SOLIST_REGISTER: registration compiled out (verdict outcome) */
+
+bool solist_register_library(uintptr_t lib_base, size_t lib_size) {
+  (void) lib_base;
+  (void) lib_size;
+
+  return false;
+}
+
+#endif /* ZKSU_SOLIST_REGISTER */
