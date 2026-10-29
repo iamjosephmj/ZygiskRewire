@@ -149,18 +149,18 @@ if [[ "$CPU_ABIS" == *"x86_64"* || "$CPU_ABIS" == *"arm64-v8a"* ]]; then
 fi
 
 if [ "$SUPPORTS_32BIT" = true ]; then
-  mkdir "$MODPATH/lib"
+  mkdir -p "$MODPATH/system/lib"
 fi
 
 if [ "$SUPPORTS_64BIT" = true ]; then
-  mkdir "$MODPATH/lib64"
+  mkdir -p "$MODPATH/system/lib64"
 fi
 
 if [ "$ARCH" = "x86" ] || [ "$ARCH" = "x64" ]; then
   if [ "$SUPPORTS_32BIT" = true ]; then
     ui_print "- Extracting x86 libraries"
     extract "$ZIPFILE" "bin/x86/${ID_DAEMON_BIN}32" "$MODPATH/bin" true
-    extract "$ZIPFILE" "lib/x86/${ID_LIB_NAME}" "$MODPATH/lib" true
+    extract "$ZIPFILE" "lib/x86/${ID_LIB_NAME}" "$MODPATH/system/lib" true
     extract "$ZIPFILE" "bin/x86/${ID_PTRACER_BIN}32" "$MODPATH/bin" true
 
     extract "$ZIPFILE" 'machikado.x86' "$MODPATH" true
@@ -169,7 +169,7 @@ if [ "$ARCH" = "x86" ] || [ "$ARCH" = "x64" ]; then
   if [ "$SUPPORTS_64BIT" = true ]; then
     ui_print "- Extracting x64 libraries"
     extract "$ZIPFILE" "bin/x86_64/${ID_DAEMON_BIN}64" "$MODPATH/bin" true
-    extract "$ZIPFILE" "lib/x86_64/${ID_LIB_NAME}" "$MODPATH/lib64" true
+    extract "$ZIPFILE" "lib/x86_64/${ID_LIB_NAME}" "$MODPATH/system/lib64" true
     extract "$ZIPFILE" "bin/x86_64/${ID_PTRACER_BIN}64" "$MODPATH/bin" true
 
     extract "$ZIPFILE" 'machikado.x86_64' "$MODPATH" true
@@ -178,7 +178,7 @@ else
   if [ "$SUPPORTS_32BIT" = true ]; then
     ui_print "- Extracting arm libraries"
     extract "$ZIPFILE" "bin/armeabi-v7a/${ID_DAEMON_BIN}32" "$MODPATH/bin" true
-    extract "$ZIPFILE" "lib/armeabi-v7a/${ID_LIB_NAME}" "$MODPATH/lib" true
+    extract "$ZIPFILE" "lib/armeabi-v7a/${ID_LIB_NAME}" "$MODPATH/system/lib" true
     extract "$ZIPFILE" "bin/armeabi-v7a/${ID_PTRACER_BIN}32" "$MODPATH/bin" true
 
     extract "$ZIPFILE" 'machikado.arm' "$MODPATH" true
@@ -187,7 +187,7 @@ else
   if [ "$SUPPORTS_64BIT" = true ]; then
     ui_print "- Extracting arm64 libraries"
     extract "$ZIPFILE" "bin/arm64-v8a/${ID_DAEMON_BIN}64" "$MODPATH/bin" true
-    extract "$ZIPFILE" "lib/arm64-v8a/${ID_LIB_NAME}" "$MODPATH/lib64" true
+    extract "$ZIPFILE" "lib/arm64-v8a/${ID_LIB_NAME}" "$MODPATH/system/lib64" true
     extract "$ZIPFILE" "bin/arm64-v8a/${ID_PTRACER_BIN}64" "$MODPATH/bin" true
 
     extract "$ZIPFILE" 'machikado.arm64' "$MODPATH" true
@@ -198,11 +198,11 @@ ui_print "- Setting permissions"
 set_perm_recursive "$MODPATH/bin" 0 0 0755 0755
 
 if [ "$SUPPORTS_32BIT" = true ]; then
-  set_perm_recursive "$MODPATH/lib" 0 0 0755 0644 u:object_r:system_lib_file:s0
+  set_perm_recursive "$MODPATH/system/lib" 0 0 0755 0644 u:object_r:system_lib_file:s0
 fi
 
 if [ "$SUPPORTS_64BIT" = true ]; then
-  set_perm_recursive "$MODPATH/lib64" 0 0 0755 0644 u:object_r:system_lib_file:s0
+  set_perm_recursive "$MODPATH/system/lib64" 0 0 0755 0644 u:object_r:system_lib_file:s0
 fi
 
 # If Huawei's Maple is enabled, system_server is created with a special way which is out of the framework's control
