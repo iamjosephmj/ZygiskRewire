@@ -64,4 +64,22 @@ else
   ./bin/@@PTRACER_BIN@@32 monitor &
 fi
 
+# INFO: Once the primary daemon has reported in (state file written by the
+#         monitor), every binary is held open by the monitor via /proc/self/fd.
+#         Deleting the on-disk copies then leaves no file behind any running process.
+(
+  # INFO: Don't propagate errexit — this cleanup must never fail the boot
+  set +e
+  i=0
+  while [ $i -lt 40 ]; do
+    if grep -q '"state": 1' "$TMP_PATH/"s*.json 2>/dev/null; then
+      rm -rf "$TMP_PATH/bin"
+      exit 0
+    fi
+    sleep 0.5
+    i=$((i + 1))
+  done
+  # INFO: Fallback — leave the copies in place (tmpfs, neutral names, 0700 dir).
+) &
+
 exit 0
