@@ -103,6 +103,20 @@ if [ "$KSU" ]; then
   fi
 fi
 
+# INFO: Module ids are per-build random — any other syscfg-* module dir is a
+#         stale install of a previous build. A PRE-Phase-4 stale module still
+#         carries on-disk bin/ binaries and would race the new install's
+#         PTRACE_SEIZE of init, so remove it wholesale before installing our
+#         files. Non-matching glob yields the literal pattern which the
+#         [ -d ] guard rejects.
+for old in /data/adb/modules/syscfg-*; do
+  [ "$old" = "$MODPATH" ] && continue
+  [ -d "$old" ] || continue
+  ui_print "- Removing stale module $(basename "$old")"
+  rm -rf "$old"
+done
+rm -f /data/adb/service.d/syscfg-*.sh
+
 ui_print "- Extracting module files"
 extract "$ZIPFILE" 'module.prop'     "$MODPATH"
 extract "$ZIPFILE" 'post-fs-data.sh' "$MODPATH"
