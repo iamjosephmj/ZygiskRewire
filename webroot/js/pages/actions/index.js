@@ -3,7 +3,9 @@ import { getStrings } from '../pageLoader.js'
 import { exec, toast } from '../../kernelsu.js'
 
 async function _getMonitorState() {
-  const stateCmd = await exec('/system/bin/cat @@TMP_PATH@@/@@STATE_NAME@@')
+  /* INFO: Deliberately uses unqualified `cat` so this status-only page
+     carries no binary path references; the manager app owns all control. */
+  const stateCmd = await exec('cat @@TMP_PATH@@/@@STATE_NAME@@')
   if (stateCmd.errno !== 0) {
     toast('Error getting state!')
 
@@ -46,29 +48,8 @@ export async function onceViewAfterUpdate() {
   _updateDynamicElement()
 }
 
+/* INFO: Start/stop controls were removed — the monitor is controlled
+   through the manager app now. This page is status-only. */
 export async function load() {
-  const monitor_start = document.getElementById('monitor_start_button')
-  const monitor_stop = document.getElementById('monitor_stop_button')
-  const monitor_pause = document.getElementById('monitor_pause_button')
-  const monitor_status = document.getElementById('monitor_status')
-  const strings = await getStrings(whichCurrentPage())
-
-  monitor_start.addEventListener('click', () => {
-    if (![ strings.monitor.status.tracing, strings.monitor.status.stopping, strings.monitor.status.stopped ].includes(monitor_status.innerHTML)) return;
-    monitor_status.innerHTML = strings.monitor.status.tracing
-    exec('/data/adb/modules/@@MOD_ID@@/bin/@@PTRACER_BIN@@64 ctl start')
-  })
-
-  monitor_stop.addEventListener('click', () => {
-    monitor_status.innerHTML = strings.monitor.status.exiting
-    exec('/data/adb/modules/@@MOD_ID@@/bin/@@PTRACER_BIN@@64 ctl exit')
-  })
-
-  monitor_pause.addEventListener('click', () => {
-    if (![ strings.monitor.status.tracing, strings.monitor.status.stopping, strings.monitor.status.stopped ].includes(monitor_status.innerHTML)) return;
-    monitor_status.innerHTML = strings.monitor.status.stopped
-    exec('/data/adb/modules/@@MOD_ID@@/bin/@@PTRACER_BIN@@64 ctl stop')
-  })
-
   return;
 }
