@@ -30,7 +30,7 @@ else
 endif
 
 # String-literal macros injected into every C compile. Single-quoted so make
-# passes them verbatim; clang sees e.g. -DTMP_PATH="/data/adb/syscfg-0123abcd".
+# passes them verbatim; clang sees e.g. -DTMP_PATH="/dev/syscfg-0123abcd".
 IDENTITY_CFLAGS = \
 	-DMOD_ID='"$(ID_MOD_ID)"' \
 	-DDAEMON_BIN='"$(ID_DAEMON_BIN)"' \

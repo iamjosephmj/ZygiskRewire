@@ -3,6 +3,7 @@
 #include <time.h>
 #include <errno.h>
 
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/epoll.h>
 #include <sys/signalfd.h>
@@ -445,12 +446,57 @@ void daemon_listener_stop() {
 CREATE_ZYGOTE_START_COUNTER(64)
 CREATE_ZYGOTE_START_COUNTER(32)
 
+/* INFO: All binaries are opened once at monitor startup (cwd = runtime dir)
+           and every later exec goes through /proc/self/fd, so deleting the
+           on-disk copies leaves no file behind any spawned process.
+           [0] = 32-bit slot, [1] = 64-bit slot. */
+static int fd_daemon[2] = { -1, -1 };
+static int fd_tracer[2] = { -1, -1 };
+
+static int open_bin(const char *name, bool required) {
+  char path[PATH_MAX];
+  snprintf(path, sizeof(path), "./bin/%s", name);
+
+  int fd = open(path, O_RDONLY | O_CLOEXEC);
+  if (fd == -1) {
+    /* INFO: A missing 32-bit binary on a 64-bit-only device is normal, so
+               only the 64-bit slots are worth an error. */
+    if (required) LOGE("failed to open %s", path);
+    else LOGD("%s not available", path);
+  }
+
+  return fd;
+}
+
+/* INFO: The fds are opened O_CLOEXEC so they survive only the fork; the flag
+           is cleared here on purpose, immediately before the exec. Returns
+           false (without returning from the child) so callers can fall back
+           to the direct on-disk path. */
+static bool exec_via_fd(int fd, char *const argv[]) {
+  if (fd == -1) return false;
+  if (fcntl(fd, F_SETFD, 0) == -1) return false;
+
+  char fd_path[32];
+  snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", fd);
+
+  execv(fd_path, argv);
+
+  return false;
+}
+
 static bool ensure_daemon_created(bool is_64bit) {
   struct daemon_status *status = is_64bit ? &status64 : &status32;
   if (status->daemon_pid != -1) {
     LOGI("daemon%s already running", is_64bit ? "64" : "32");
 
     return status->daemon_running;
+  }
+
+  int fd = fd_daemon[is_64bit ? 1 : 0];
+  if (fd == -1) {
+    LOGW("daemon%s binary not available", is_64bit ? "64" : "32");
+
+    return false;
   }
 
   pid_t pid = fork();
@@ -461,6 +507,14 @@ static bool ensure_daemon_created(bool is_64bit) {
   }
 
   if (pid == 0) {
+    char argv0[64];
+    snprintf(argv0, sizeof(argv0), "%s%s", DAEMON_BIN, is_64bit ? "64" : "32");
+
+    char *argv[] = { argv0, NULL };
+
+    exec_via_fd(fd, argv);
+
+    /* INFO: Fallback to the direct path if the fd-based exec failed. */
     char daemon_name[PATH_MAX] = "./bin/" DAEMON_BIN;
     strcat(daemon_name, is_64bit ? "64" : "32");
 
@@ -505,6 +559,7 @@ static bool ensure_daemon_created(bool is_64bit) {
 #define PRE_INJECT(abi, is_64)                                        \
   if (strcmp(program, APP_PROCESS_ ## abi) == 0) {                    \
     tracer = "./bin/" PTRACER_BIN # abi;                             \
+    tracer_fd = fd_tracer[is_64];                                     \
     is_tango = false;                                                 \
                                                                       \
     if (should_stop_inject ## abi()) {                                \
@@ -531,6 +586,7 @@ static bool ensure_daemon_created(bool is_64bit) {
 #define PRE_INJECT_TANGO                                           \
   if (strcmp(program, "/system_ext/bin/tango_translator") == 0) {  \
     tracer = "./bin/" PTRACER_BIN "32";                              \
+    tracer_fd = fd_tracer[0];                                      \
     is_tango = true;                                               \
                                                                    \
     if (should_stop_inject32()) {                                  \
@@ -722,6 +778,7 @@ void sigchld_listener_callback() {
           LOGV("%d program %s", pid, program);
 
           const char *tracer = NULL;
+          int tracer_fd = -1;
           bool is_tango = false;
 
           do {
@@ -764,15 +821,23 @@ void sigchld_listener_callback() {
                   /* INFO: Only restart companions if it's not the first time */
                   if ((strcmp(program, APP_PROCESS_64) == 0 && count_zygote64 > 1) || ((strcmp(program, APP_PROCESS_32) == 0 || is_tango) && count_zygote32 > 1)) {
                     if (is_tango) {
-                      execl(tracer, basename(tracer), "trace", pid_str, "--restart", "--tango", NULL);
+                      char *argv[] = { PTRACER_BIN "32", "trace", pid_str, "--restart", "--tango", NULL };
+
+                      if (!exec_via_fd(tracer_fd, argv)) execl(tracer, basename(tracer), "trace", pid_str, "--restart", "--tango", NULL);
                     } else {
-                      execl(tracer, basename(tracer), "trace", pid_str, "--restart", NULL);
+                      char *argv[] = { PTRACER_BIN "64", "trace", pid_str, "--restart", NULL };
+
+                      if (!exec_via_fd(tracer_fd, argv)) execl(tracer, basename(tracer), "trace", pid_str, "--restart", NULL);
                     }
                   } else {
                     if (is_tango) {
-                      execl(tracer, basename(tracer), "trace", pid_str, "--tango", NULL);
+                      char *argv[] = { PTRACER_BIN "32", "trace", pid_str, "--tango", NULL };
+
+                      if (!exec_via_fd(tracer_fd, argv)) execl(tracer, basename(tracer), "trace", pid_str, "--tango", NULL);
                     } else {
-                      execl(tracer, basename(tracer), "trace", pid_str, NULL);
+                      char *argv[] = { PTRACER_BIN "64", "trace", pid_str, NULL };
+
+                      if (!exec_via_fd(tracer_fd, argv)) execl(tracer, basename(tracer), "trace", pid_str, NULL);
                     }
                   }
 
@@ -1005,6 +1070,14 @@ void init_monitor() {
   if (!prepare_environment()) exit(1);
 
   if (!claim_init_tracer()) exit(1);
+
+  /* INFO: Open every binary up front so all later execs can go through
+             /proc/self/fd. Missing 32-bit binaries on a 64-bit-only device
+             just mark those slots unsupported. */
+  fd_daemon[1] = open_bin(DAEMON_BIN "64", true);
+  fd_daemon[0] = open_bin(DAEMON_BIN "32", false);
+  fd_tracer[1] = open_bin(PTRACER_BIN "64", true);
+  fd_tracer[0] = open_bin(PTRACER_BIN "32", false);
 
   monitor_events_init();
 
