@@ -149,7 +149,26 @@ app-payload + tmpfs only.
 - Overlay file content must equal the mapped content: the ptracer maps from the overlay path
   itself; no post-map content patching anywhere.
 
-**Stacked consistency layers:**
+**Stacked consistency layers (Phase 3 implementation residuals, recorded 2026-10-29):**
+
+- The overlay mount is visible in `/proc/mounts` of every app, and the option
+  string leaks the runtime dir name (`upperdir=/dev/<MOD_ID>/ovl/...`).
+  Additionally, `/system/lib64/<LIB_NAME>` is a file no package database, APEX
+  manifest, or OTA manifest knows about — an "unknown system library" detector
+  remains possible. On SUSFS-equipped managers the mount entry can be hidden.
+- The denylist interaction is handled in code: `umount_root()` unmounts
+  type-overlay mounts on `/system/lib{,64}` for denylisted apps (Phase 3 fix
+  wave); the live denylist check rides Phase 4/5 device validation.
+- Manager-stacking seam: on managers WITH native module mounts (Magisk), the
+  manager's mount and the stub overlay stack; the denylist peel reveals the
+  stub mount underneath. Validate on Magisk/APatch before broad release.
+- Dirty-page byte-compare (memory text vs overlay file) is verified by static
+  analysis only (textrel-free link, BIND_NOW, file-backed MAP_PRIVATE,
+  relocations data-only); device-side byte-compare rides Phase 4 validation.
+- Solist consistency (dl_iterate_phdr cross-check) is deferred: the solist head
+  is a linker-internal static unreachable by any safe version-independent
+  anchor — see docs/superpowers/notes/phase3-solist-spike.md (VERDICT) and the
+  S3/S4/S5 future-activation conditions recorded there.
 - **VMA naming**: any mapping that must remain anonymous (fallback path, transient bootstrap) is
   named via `prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME)` mimicking ART-owned region names
   (defeats grep-based anonymous-region detection).
