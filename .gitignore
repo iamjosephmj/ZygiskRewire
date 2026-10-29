@@ -11,3 +11,8 @@ module/identity.env
 .gradle/
 app/build/
 local.properties
+
+# Release signing material (never commit)
+keystore.properties
+*.jks
+*.keystore
