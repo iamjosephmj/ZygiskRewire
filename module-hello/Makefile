@@ -31,8 +31,11 @@ $(OUT)/classes/com/zygiskrewire/hello/HelloWorldHook.class: java/com/zygiskrewir
 	@mkdir -p $(OUT)/classes
 	$(JAVAC) --release 11 -classpath $(lastword $(ANDROID_JAR)) -d $(OUT)/classes $<
 
+# Pass all nest-mate classes via a SHELL glob: a make $(wildcard) here would
+# let make eat the $1/$2 in the inner-class filenames as variable references.
 $(OUT)/classes.dex: $(OUT)/classes/com/zygiskrewire/hello/HelloWorldHook.class
-	$(D8) --release --min-api 26 --output $(OUT) $(OUT)/classes/com/zygiskrewire/hello/HelloWorldHook.class
+	$(D8) --release --min-api 26 --output $(OUT) \
+		$(OUT)/classes/com/zygiskrewire/hello/*.class
 
 $(OUT)/payload.dex: $(OUT)/classes.dex
 	cp $< $@
