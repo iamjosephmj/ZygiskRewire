@@ -696,6 +696,9 @@ bool umount_root(struct root_impl impl) {
     if (strncmp(mount.target, "/data/adb/modules", strlen("/data/adb/modules")) == 0) should_unmount = true;
     if (strncmp(mount.root, "/adb/modules/", strlen("/adb/modules/")) == 0) should_unmount = true;
 
+    /* INFO: Manager-less module overlays on system lib dirs */
+    if (strcmp(mount.type, "overlay") == 0 && (strcmp(mount.target, "/system/lib64") == 0 || strcmp(mount.target, "/system/lib") == 0)) should_unmount = true;
+
     if (!should_unmount) continue;
 
     char **tmp_targets = realloc(targets_to_unmount, (num_targets + 1) * sizeof(char*));
