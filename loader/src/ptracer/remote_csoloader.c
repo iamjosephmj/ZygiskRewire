@@ -19,6 +19,20 @@
 #undef SYS_mmap
 #define SYS_mmap LP_SELECT(__NR_mmap2, __NR_mmap)
 
+/* INFO: PR_SET_VMA names anonymous mappings so /proc/<pid>/maps renders them
+           as "[anon:<name>]" instead of a blank anonymous region. The uapi
+           constants are missing from older NDK sysroots (API 25-era headers
+           predate kernel 5.10), so define them locally as a fallback. */
+#ifndef PR_SET_VMA
+  #define PR_SET_VMA 0x53564d41
+#endif
+#ifndef PR_SET_VMA_ANON_NAME
+  #define PR_SET_VMA_ANON_NAME 0
+#endif
+#ifndef SYS_prctl
+  #define SYS_prctl __NR_prctl
+#endif
+
 #include "socket_utils.h"
 
 #ifndef ALIGN_DOWN
@@ -694,6 +708,47 @@ static bool apply_relocations(int pid, int fd, const struct elf_dyn_info *info,
   return true;
 }
 
+/* INFO: Give an anonymous mapping in the remote process a kernel-visible VMA
+           name so it does not appear as a blank anonymous region in
+           /proc/<pid>/maps. The kernel prepends "[anon:" and appends "]" when
+           displaying PR_SET_VMA names, so pass the bare label here:
+           "libc_malloc" renders as "[anon:libc_malloc]". Naming is purely
+           cosmetic mimicry: PR_SET_VMA needs kernel >= 5.10 with
+           CONFIG_ANON_VMA_NAME and otherwise fails with EINVAL/ENOSYS, which
+           is tolerated silently (LOGD only), never fatal. */
+static bool remote_name_anon(int pid, struct user_regs_struct *regs,
+                             uintptr_t syscall_gadget, uintptr_t addr, size_t len,
+                             const char *name) {
+  if (len == 0) return true;
+
+  size_t name_len = strlen(name) + 1;
+  uintptr_t remote_name = regs->REG_SP - ALIGN_UP(name_len, 16);
+  if (write_proc(pid, remote_name, name, name_len) != (ssize_t)name_len) {
+    LOGD("Failed to write remote VMA name string to stack");
+
+    return false;
+  }
+
+  /* INFO: Keep remote_call's own stack usage below the name string */
+  regs->REG_SP = remote_name;
+
+  long args[5];
+  args[0] = PR_SET_VMA;
+  args[1] = PR_SET_VMA_ANON_NAME;
+  args[2] = (long)addr;
+  args[3] = (long)len;
+  args[4] = (long)remote_name;
+
+  long ret = remote_syscall(pid, regs, syscall_gadget, SYS_prctl, args, 5);
+  if (ret != 0) {
+    LOGD("remote PR_SET_VMA naming failed for %p+%zu: %ld", (void *)addr, len, ret);
+
+    return false;
+  }
+
+  return true;
+}
+
 bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *regs,
                                              struct maps_info *remote_map, struct maps_info *local_map,
                                              const char *lib_path, uintptr_t *out_base,
@@ -944,6 +999,12 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
 
           return false;
         }
+
+        /* INFO: Name the anonymous bss-tail mapping so it does not betray the
+           injection in /proc/<pid>/maps. Failure is tolerated (LOGD inside) —
+           naming is cosmetic mimicry, not a load requirement. */
+        remote_name_anon(pid, regs, syscall_gadget, bss_map,
+                         (size_t)(seg_page_end - file_page_end), "libc_malloc");
       }
     } else {
       off_t seg_offset = (off_t)phdr[i].p_offset;
@@ -998,6 +1059,12 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
 
           return false;
         }
+
+        /* INFO: Name the anonymous bss-tail mapping so it does not betray the
+           injection in /proc/<pid>/maps. Failure is tolerated (LOGD inside) —
+           naming is cosmetic mimicry, not a load requirement. */
+        remote_name_anon(pid, regs, syscall_gadget, bss_map,
+                         (size_t)(seg_page_end - file_page_end), "libc_malloc");
       }
     }
 
