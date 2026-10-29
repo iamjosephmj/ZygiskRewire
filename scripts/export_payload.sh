@@ -76,6 +76,16 @@ done
 OUT="$REPO_ROOT/app/src/main/assets/payload"
 PROPS="$OUT/identity.props"
 
+# INFO: Defense-in-depth mirror of the Makefile's BUILD_DIR misuse guard: the
+#         payload must never land under a build/ tree (the next clean would
+#         wipe it, and it would shadow the staged outputs the gate inspects).
+#         OUT is fixed today; the guard trips if that ever changes.
+case "$OUT" in
+  build/* | */build/* | */build)
+    die "payload OUT must not resolve under a build/ path: $OUT"
+    ;;
+esac
+
 # Rebuild the payload tree from scratch so no stale file survives an identity change.
 rm -rf "$OUT"
 mkdir -p "$OUT/lib" "$OUT/lib64"

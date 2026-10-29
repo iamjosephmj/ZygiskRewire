@@ -31,11 +31,6 @@
           "stopped": "Gestoppt",
           "exiting": "Beende",
           "unknown": "Unbekannt"
-        },
-        "button": {
-          "start": "Start",
-          "stop": "Stop",
-          "pause": "Pause"
         }
       }
     },

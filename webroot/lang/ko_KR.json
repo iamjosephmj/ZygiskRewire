@@ -31,11 +31,6 @@
           "stopped": "중지됨",
           "exiting": "종료 중",
           "unknown": "알 수 없음"
-        },
-        "button": {
-          "start": "시작",
-          "stop": "중지",
-          "pause": "일시 중지"
         }
       }
     },
