@@ -20,6 +20,22 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- INFO: Trim library-merged components we do not use: androidx.startup's
+             InitializationProvider (merged in via profileinstaller) and
+             profileinstaller's ProfileInstallReceiver (baseline-profile delivery
+             over adb) carry no function for the payload carrier. Removing the
+             provider also drops every initializer merged through it. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="remove" />
+
+        <receiver
+            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+            android:exported="false"
+            tools:node="remove" />
     </application>
 
 </manifest>

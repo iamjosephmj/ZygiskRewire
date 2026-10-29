@@ -1080,6 +1080,13 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
       segs[segs_count].len = seg_page_len;
       segs[segs_count].final_prot = prot;
       segs_count++;
+    } else {
+      /* INFO: segs[] is a fixed-size table; a pathological ELF with more
+         PT_LOAD entries than it holds would silently lose the tail and
+         leave those pages at their load-time protections. Log the drop so
+         the overflow is at least diagnosable. */
+      LOGE("Too many PT_LOAD segments; dropping segment at %p beyond the %zu-entry table",
+           (void *)seg_page, sizeof(segs) / sizeof(segs[0]));
     }
   }
 

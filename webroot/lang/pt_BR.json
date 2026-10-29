@@ -31,11 +31,6 @@
           "stopped": "Parado",
           "exiting": "Desligando",
           "unknown": "Desconhecido"
-        },
-        "button": {
-          "start": "Iniciar",
-          "stop": "Parar",
-          "pause": "Pausar"
         }
       }
     },

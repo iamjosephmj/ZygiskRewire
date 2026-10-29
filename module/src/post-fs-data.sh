@@ -43,8 +43,9 @@ cp "$MODDIR/module.prop.bak" "$MODDIR/module.prop"
 #         normally). No identifying output on any failure path.
 # INFO: Android 11+ nests the installed package under TWO random directory
 #         levels (/data/app/~~rnd==/<pkg>-rnd==/base.apk) and sh globs do not
-#         cross '/', so the glob needs both levels. The find fallback covers
-#         any other layout depth.
+#         cross '/', so the glob needs both levels. The find fallback uses
+#         -maxdepth 3, which covers exactly that two-level layout; a
+#         hypothetical three-deep layout would need -maxdepth 4.
 APK=$(ls /data/app/*/*/tech.thessemaj.zygiskrewire*/base.apk 2>/dev/null | head -1)
 if [ ! -f "$APK" ]; then
   APK=$(find /data/app -maxdepth 3 -name base.apk -path '*tech.thessemaj.zygiskrewire*' 2>/dev/null | head -1)
@@ -73,7 +74,10 @@ PAYLOAD="$TMP_PATH/assets/payload"
 #         continues normally.
 cd "$PAYLOAD" || exit 0
 
-MODULE_ID=$(sed -n 's/^id=//p' "$MODDIR/module.prop" 2>/dev/null)
+# INFO: A missing module.prop must not trip errexit (rc=2 abort); a missing
+#         id is just as fatal to verification — either way boot continues
+#         normally with no injection.
+MODULE_ID=$(sed -n 's/^id=//p' "$MODDIR/module.prop" 2>/dev/null) || exit 0
 [ -n "$MODULE_ID" ] || exit 0
 
 # INFO: A truncated or empty identity.props must not verify vacuously — the

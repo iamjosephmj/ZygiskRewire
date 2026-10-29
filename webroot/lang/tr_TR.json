@@ -31,11 +31,6 @@
           "stopped": "Durduruldu",
           "exiting": "Çıkılıyor",
           "unknown": "Bilinmiyor"
-        },
-        "button": {
-          "start": "Başlat",
-          "stop": "Durdur",
-          "pause": "Duraklat"
         }
       }
     },

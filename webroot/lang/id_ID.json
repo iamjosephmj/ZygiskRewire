@@ -31,11 +31,6 @@
           "stopped": "Terhenti",
           "exiting": "Sedang Keluar",
           "unknown": "Tidak diketahui"
-        },
-        "button": {
-          "pause": "Jeda",
-          "stop": "Berhenti",
-          "start": "Mulai"
         }
       }
     },

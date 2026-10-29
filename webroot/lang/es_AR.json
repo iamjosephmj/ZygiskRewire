@@ -31,11 +31,6 @@
           "stopped": "Detenido",
           "exiting": "Saliendo",
           "unknown": "Desconocido"
-        },
-        "button": {
-          "pause": "Pausar",
-          "stop": "Detener",
-          "start": "Iniciar"
         }
       }
     },

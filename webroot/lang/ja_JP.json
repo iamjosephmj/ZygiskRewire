@@ -31,11 +31,6 @@
           "stopped": "停止済み",
           "exiting": "終了中",
           "unknown": "不明"
-        },
-        "button": {
-          "start": "開始",
-          "stop": "停止",
-          "pause": "一時停止"
         }
       }
     },

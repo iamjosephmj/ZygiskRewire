@@ -31,11 +31,6 @@
           "stopped": "已停止",
           "exiting": "正在退出",
           "unknown": "未知"
-        },
-        "button": {
-          "start": "启动",
-          "stop": "停止",
-          "pause": "暂停"
         }
       }
     },
