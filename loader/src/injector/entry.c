@@ -13,10 +13,12 @@ void entry(void *addr, size_t size, int tango_flag) {
   start_addr = addr;
   block_size = size;
 
-  /* INFO: Solist-consistency spike (Task 4): make dl_iterate_phdr report the
-             mapped loader under the same /system overlay path that maps
-             shows. Fully runtime-derived and cross-validated; any ambiguity
-             skips the registration. See
+  /* INFO: Solist-consistency spike (Task 4, VERDICT OUTCOME): would make
+             dl_iterate_phdr report the mapped loader under the same /system
+             overlay path that maps shows. INERT by default — the solist head
+             is a linker-internal static and never appears in .dynsym, so the
+             spike's anchor cannot resolve; the call compiles to a no-op stub
+             unless -DZKSU_SOLIST_REGISTER=1. See
              docs/superpowers/notes/phase3-solist-spike.md. */
   if (!solist_register_library((uintptr_t)addr, size)) {
     LOGD("solist registration skipped, continuing without solist entry");
