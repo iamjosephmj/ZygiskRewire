@@ -10,8 +10,13 @@ ROOT="$(pwd)"
 # a following non-word char (slash, quote, space — underscore excluded so
 # `/zygisk_d`-style identifiers stay visible) or end-of-line masks it, while
 # `/zygisk<identifier>` leak forms (zygiskd, zygisk_file, ...) stay visible.
+# The manager app's package id is keep-listed as an EXACT literal (Phase 4
+# payload carrier): it is a fixed, public, user-visible string that cannot be
+# identity-random — the boot stub locates the installed app by it and Android
+# publishes it in settings. Only the exact package matches; any other use of
+# zygisk/rezygisk stays a leak.
 filter_keep_list() {
-  sed -E 's/zygisk_module_entry//g; s/zygisk_companion_entry//g; s/ZYGISK_ENABLED//g; s,/zygisk([^[:alnum:]_]|$),/dir\1,g'
+  sed -E 's/zygisk_module_entry//g; s/zygisk_companion_entry//g; s/ZYGISK_ENABLED//g; s,/zygisk([^[:alnum:]_]|$),/dir\1,g; s/tech[.]thessemaj[.]zygiskrewire/the-manager-app/g'
 }
 
 check_clean() { # $1 = dir

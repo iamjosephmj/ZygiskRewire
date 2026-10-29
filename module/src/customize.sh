@@ -117,93 +117,16 @@ chmod +x "/data/adb/service.d/${ID_MOD_ID}.sh"
 
 mv "$TMPDIR/sepolicy.rule" "$MODPATH"
 
-mkdir "$MODPATH/bin"
+# INFO: The manager app's APK is the payload carrier now — the module dir
+#         must hold no runtime binaries. Remove the bin/, lib/, lib64/ and
+#         system/ trees both from this install and as stale leftovers when
+#         upgrading over a Phase 1-3 build that staged them here.
+rm -rf "$MODPATH/bin" "$MODPATH/lib" "$MODPATH/lib64" "$MODPATH/system"
+
 mkdir "$MODPATH/webroot"
 
 ui_print "- Extracting webroot"
 unzip -o "$ZIPFILE" "webroot/*" -x "*.sha256" -d "$MODPATH"
-
-# INFO: Utilize the one with the biggest output, as some devices with Tango have the full list
-#         in ro.product.cpu.abilist but others only have a subset there, and the full list in
-#         ro.system.product.cpu.abilist
-CPU_ABIS_PROP1=$(getprop ro.system.product.cpu.abilist)
-CPU_ABIS_PROP2=$(getprop ro.product.cpu.abilist)
-
-if [ "${#CPU_ABIS_PROP2}" -gt "${#CPU_ABIS_PROP1}" ]; then
-  CPU_ABIS=$CPU_ABIS_PROP2
-else
-  CPU_ABIS=$CPU_ABIS_PROP1
-fi
-
-SUPPORTS_32BIT=false
-SUPPORTS_64BIT=false
-
-if [[ "$CPU_ABIS" == *"x86"* && "$CPU_ABIS" != "x86_64" || "$CPU_ABIS" == *"armeabi"* ]]; then
-  SUPPORTS_32BIT=true
-  ui_print "- Device supports 32-bit"
-fi
-
-if [[ "$CPU_ABIS" == *"x86_64"* || "$CPU_ABIS" == *"arm64-v8a"* ]]; then
-  SUPPORTS_64BIT=true
-  ui_print "- Device supports 64-bit"
-fi
-
-if [ "$SUPPORTS_32BIT" = true ]; then
-  mkdir -p "$MODPATH/system/lib"
-fi
-
-if [ "$SUPPORTS_64BIT" = true ]; then
-  mkdir -p "$MODPATH/system/lib64"
-fi
-
-if [ "$ARCH" = "x86" ] || [ "$ARCH" = "x64" ]; then
-  if [ "$SUPPORTS_32BIT" = true ]; then
-    ui_print "- Extracting x86 libraries"
-    extract "$ZIPFILE" "bin/x86/${ID_DAEMON_BIN}32" "$MODPATH/bin" true
-    extract "$ZIPFILE" "lib/x86/${ID_LIB_NAME}" "$MODPATH/system/lib" true
-    extract "$ZIPFILE" "bin/x86/${ID_PTRACER_BIN}32" "$MODPATH/bin" true
-
-    extract "$ZIPFILE" 'machikado.x86' "$MODPATH" true
-  fi
-
-  if [ "$SUPPORTS_64BIT" = true ]; then
-    ui_print "- Extracting x64 libraries"
-    extract "$ZIPFILE" "bin/x86_64/${ID_DAEMON_BIN}64" "$MODPATH/bin" true
-    extract "$ZIPFILE" "lib/x86_64/${ID_LIB_NAME}" "$MODPATH/system/lib64" true
-    extract "$ZIPFILE" "bin/x86_64/${ID_PTRACER_BIN}64" "$MODPATH/bin" true
-
-    extract "$ZIPFILE" 'machikado.x86_64' "$MODPATH" true
-  fi
-else
-  if [ "$SUPPORTS_32BIT" = true ]; then
-    ui_print "- Extracting arm libraries"
-    extract "$ZIPFILE" "bin/armeabi-v7a/${ID_DAEMON_BIN}32" "$MODPATH/bin" true
-    extract "$ZIPFILE" "lib/armeabi-v7a/${ID_LIB_NAME}" "$MODPATH/system/lib" true
-    extract "$ZIPFILE" "bin/armeabi-v7a/${ID_PTRACER_BIN}32" "$MODPATH/bin" true
-
-    extract "$ZIPFILE" 'machikado.arm' "$MODPATH" true
-  fi
-
-  if [ "$SUPPORTS_64BIT" = true ]; then
-    ui_print "- Extracting arm64 libraries"
-    extract "$ZIPFILE" "bin/arm64-v8a/${ID_DAEMON_BIN}64" "$MODPATH/bin" true
-    extract "$ZIPFILE" "lib/arm64-v8a/${ID_LIB_NAME}" "$MODPATH/system/lib64" true
-    extract "$ZIPFILE" "bin/arm64-v8a/${ID_PTRACER_BIN}64" "$MODPATH/bin" true
-
-    extract "$ZIPFILE" 'machikado.arm64' "$MODPATH" true
-  fi
-fi
-
-ui_print "- Setting permissions"
-set_perm_recursive "$MODPATH/bin" 0 0 0755 0755
-
-if [ "$SUPPORTS_32BIT" = true ]; then
-  set_perm_recursive "$MODPATH/system/lib" 0 0 0755 0644 u:object_r:system_lib_file:s0
-fi
-
-if [ "$SUPPORTS_64BIT" = true ]; then
-  set_perm_recursive "$MODPATH/system/lib64" 0 0 0755 0644 u:object_r:system_lib_file:s0
-fi
 
 # If Huawei's Maple is enabled, system_server is created with a special way which is out of the framework's control
 HUAWEI_MAPLE_ENABLED=$(grep_prop ro.maple.enable)
