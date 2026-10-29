@@ -1,30 +1,33 @@
-const developmentResponse = {
-  '/system/bin/cat @@TMP_PATH@@/@@STATE_NAME@@': {
-    errno: 0,
-    stdout: `
-      {
-        "root": "KernelSU",
-        "monitor": {
-          "state": "0"
+const monitorStateResponse = {
+  errno: 0,
+  stdout: `
+    {
+      "root": "KernelSU",
+      "monitor": {
+        "state": "0"
+      },
+      "@@CP_BASE@@_st": {
+        "64": {
+          "state": 1,
+          "modules": ["immense_cool", "example_module"]
         },
-        "@@CP_BASE@@_st": {
-          "64": {
-            "state": 1,
-            "modules": ["immense_cool", "example_module"]
-          },
-          "32": {
-            "state": 1,
-            "modules": ["immense_cool", "example_module"]
-          }
-        },
-        "zygote": {
-          "64": 1,
-          "32": 1
+        "32": {
+          "state": 1,
+          "modules": ["immense_cool", "example_module"]
         }
+      },
+      "zygote": {
+        "64": 1,
+        "32": 1
       }
-    `,
-    stderr: ''
-  },
+    }
+  `,
+  stderr: ''
+}
+
+const developmentResponse = {
+  '/system/bin/cat @@TMP_PATH@@/@@STATE_NAME@@': monitorStateResponse,
+  'cat @@TMP_PATH@@/@@STATE_NAME@@': monitorStateResponse,
   'cat /data/adb/modules/@@MOD_ID@@/module.prop': {
     errno: 0,
     stdout: 'version=v1.0.0 (505-7e3db00-release)',
