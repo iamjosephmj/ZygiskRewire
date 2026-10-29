@@ -47,10 +47,13 @@ static long remote_mmap_offset_arg(off_t file_offset, size_t page_size) {
   #endif
 }
 
-/* INFO: Parse ELF headers and compute the total mapping size for PT_LOAD segments. */
+/* INFO: Parse ELF headers and compute the total mapping size for PT_LOAD segments.
+           Also records the PT_GNU_RELRO region (file vaddr/memsz) so the caller can
+           finalize it read-only after relocations. */
 static bool compute_load_layout(int fd, size_t page_size, ElfW(Ehdr) *eh,
                                 ElfW(Phdr) **out_phdr, ElfW(Addr) *out_min_vaddr,
-                                size_t *out_map_size) {
+                                size_t *out_map_size, ElfW(Addr) *out_relro_vaddr,
+                                size_t *out_relro_memsz) {
   if (!read_loop_offset(fd, eh, sizeof(*eh), 0)) {
     LOGE("Failed to read ELF header");
 
@@ -83,7 +86,15 @@ static bool compute_load_layout(int fd, size_t page_size, ElfW(Ehdr) *eh,
   ElfW(Addr) lo = (ElfW(Addr))UINTPTR_MAX;
   ElfW(Addr) hi = 0;
 
+  ElfW(Addr) relro_vaddr = 0;
+  size_t relro_memsz = 0;
+
   for (int i = 0; i < eh->e_phnum; i++) {
+    if (phdr[i].p_type == PT_GNU_RELRO) {
+      relro_vaddr = phdr[i].p_vaddr;
+      relro_memsz = (size_t)phdr[i].p_memsz;
+    }
+
     if (phdr[i].p_type != PT_LOAD) continue;
     if (phdr[i].p_vaddr < lo) lo = phdr[i].p_vaddr;
 
@@ -106,6 +117,8 @@ static bool compute_load_layout(int fd, size_t page_size, ElfW(Ehdr) *eh,
   *out_min_vaddr = lo;
   *out_map_size = (size_t)(hi - lo);
   *out_phdr = phdr;
+  *out_relro_vaddr = relro_vaddr;
+  *out_relro_memsz = relro_memsz;
 
   return true;
 }
@@ -708,8 +721,10 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
   ElfW(Phdr) *phdr = NULL;
   ElfW(Addr) min_vaddr = 0;
   size_t map_size = 0;
+  ElfW(Addr) relro_vaddr = 0;
+  size_t relro_memsz = 0;
 
-  if (!compute_load_layout(fd, page_size, &eh, &phdr, &min_vaddr, &map_size)) {
+  if (!compute_load_layout(fd, page_size, &eh, &phdr, &min_vaddr, &map_size, &relro_vaddr, &relro_memsz)) {
     LOGE("Failed to parse ELF phdrs for %s", lib_path);
     close(fd);
 
@@ -1074,6 +1089,23 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
       close(fd);
 
       return false;
+    }
+  }
+
+  /* INFO: Finalize the GNU_RELRO region after relocations: a real linker leaves
+             these pages read-only, so do the same in the remote process. A
+             failure here is a hardening gap, not a load failure. */
+  if (relro_vaddr != 0 && relro_memsz > 0) {
+    uintptr_t relro_start = page_start((uintptr_t)relro_vaddr + load_bias, page_size);
+    uintptr_t relro_end = page_end((uintptr_t)relro_vaddr + (uintptr_t)relro_memsz + load_bias, page_size);
+
+    args[0] = (long)relro_start;
+    args[1] = (long)(relro_end - relro_start);
+    args[2] = PROT_READ;
+
+    long mp_ret = remote_syscall(pid, regs, syscall_gadget, SYS_mprotect, args, 3);
+    if (mp_ret < 0) {
+      LOGE("Failed to finalize GNU_RELRO region at %p: %ld", (void *)relro_start, mp_ret);
     }
   }
 
