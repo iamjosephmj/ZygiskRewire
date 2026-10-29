@@ -25,13 +25,49 @@ public final class PipelinePageView extends View {
     private final Paint xPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Handler tickHandler = new Handler(Looper.getMainLooper());
 
+    private boolean ticking;
+
+    /** True while any pulse-driven animation needs frames. */
+    private boolean hasPulseAnimation() {
+        if (model == null) {
+            return false;
+        }
+        for (HudModel.Stage stage : model.stages) {
+            if (stage.state == HudModel.StageState.ACTIVE) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 50 ms invalidate tick, run ONLY while the window is visible and an
+    // ACTIVE stage keeps its node pulse alive; the loop stops itself when
+    // the work runs out and is restarted by visibility/model changes.
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
             invalidate();
-            tickHandler.postDelayed(this, 50L);
+            if (hasPulseAnimation()) {
+                tickHandler.postDelayed(this, TICK_MS);
+            } else {
+                ticking = false;
+            }
         }
     };
+
+    private static final long TICK_MS = 50L;
+
+    private void ensureTicking() {
+        if (!ticking && getWindowVisibility() == VISIBLE && hasPulseAnimation()) {
+            ticking = true;
+            tickHandler.post(tick);
+        }
+    }
+
+    private void stopTicking() {
+        tickHandler.removeCallbacks(tick);
+        ticking = false;
+    }
 
     public PipelinePageView(Context context) {
         super(context);
@@ -44,18 +80,33 @@ public final class PipelinePageView extends View {
     public void setModel(HudModel value) {
         model = value;
         invalidate();
+        if (hasPulseAnimation()) {
+            ensureTicking();
+        } else {
+            stopTicking();
+        }
     }
 
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        tickHandler.post(tick);
+        ensureTicking();
     }
 
     @Override
     protected void onDetachedFromWindow() {
-        tickHandler.removeCallbacks(tick);
+        stopTicking();
         super.onDetachedFromWindow();
+    }
+
+    @Override
+    protected void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        if (visibility == VISIBLE) {
+            ensureTicking();
+        } else {
+            stopTicking();
+        }
     }
 
     @Override
@@ -105,7 +156,8 @@ public final class PipelinePageView extends View {
                 fillPaint.setColor(HudModel.COLOR_GREEN);
                 canvas.drawCircle(railX, y, 9 * d, fillPaint);
             } else {
-                paint.setStyle(Paint.Style.STROKE);
+                // Node ring: fillPaint toggles its own style; the TEXT paint
+                // must stay FILL or every glyph downstream draws stroke-only.
                 int ring = stage.state == HudModel.StageState.BLOCKED
                         ? HudModel.COLOR_RED : HudModel.COLOR_DIM;
                 fillPaint.setColor(ring);

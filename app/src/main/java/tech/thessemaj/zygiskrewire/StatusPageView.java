@@ -45,15 +45,55 @@ public final class StatusPageView extends View {
     private final Paint linePaint = new Paint();
     private final Handler tickHandler = new Handler(Looper.getMainLooper());
 
+    /** Reused per-frame layout metrics (no per-frame allocation). */
+    private final Metrics metrics = new Metrics();
+
+    private boolean ticking;
+
+    /** True while any animation still needs frames (blink/crossfade/glow). */
+    private boolean hasPendingAnimation(long now) {
+        if (busy) {
+            return true;
+        }
+        if (now - crossfadeStart < CROSSFADE_MS) {
+            return true;
+        }
+        long glowAge = now - glowPulseStart;
+        return glowPulseStart != 0 && glowAge >= 0 && glowAge <= GLOW_PULSE_MS;
+    }
+
+    // 50 ms invalidate tick, run ONLY while the window is visible and a
+    // pending animation (busy blink, hero crossfade, completion glow) needs
+    // frames; the loop stops itself when the work runs out and is restarted
+    // by visibility/model/busy changes.
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
             long now = System.currentTimeMillis();
             cursorOn = (now / BLINK_MS) % 2 == 0;
             invalidate();
-            tickHandler.postDelayed(this, 50L);
+            if (hasPendingAnimation(now)) {
+                tickHandler.postDelayed(this, TICK_MS);
+            } else {
+                ticking = false;
+            }
         }
     };
+
+    private static final long TICK_MS = 50L;
+
+    private void ensureTicking() {
+        if (!ticking && getWindowVisibility() == VISIBLE
+                && hasPendingAnimation(System.currentTimeMillis())) {
+            ticking = true;
+            tickHandler.post(tick);
+        }
+    }
+
+    private void stopTicking() {
+        tickHandler.removeCallbacks(tick);
+        ticking = false;
+    }
 
     public StatusPageView(Context context) {
         super(context);
@@ -80,23 +120,37 @@ public final class StatusPageView extends View {
         model = value;
         requestLayout();
         invalidate();
+        ensureTicking();
     }
 
     public void setBusy(boolean value) {
         busy = value;
         invalidate();
+        if (value) {
+            ensureTicking();
+        }
     }
 
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        tickHandler.post(tick);
+        ensureTicking();
     }
 
     @Override
     protected void onDetachedFromWindow() {
-        tickHandler.removeCallbacks(tick);
+        stopTicking();
         super.onDetachedFromWindow();
+    }
+
+    @Override
+    protected void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        if (visibility == VISIBLE) {
+            ensureTicking();
+        } else {
+            stopTicking();
+        }
     }
 
     // ------------------------------------------------------------- metrics
@@ -115,7 +169,7 @@ public final class StatusPageView extends View {
     }
 
     private Metrics measure() {
-        Metrics m = new Metrics();
+        Metrics m = metrics; // reused; onDraw/onMeasure run on the UI thread
         float d = getResources().getDisplayMetrics().density;
         float sp = getResources().getDisplayMetrics().scaledDensity;
         m.pad = 48 * d;                       // 8-pt grid: hero block 48
