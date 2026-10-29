@@ -22,6 +22,11 @@
 >    (`app/build/outputs/apk/debug/app-debug.apk`) and the zip
 >    (`build/out/*.zip`). An APK/zip pair from different builds fails the
 >    id verification at boot and silently skips injection.
+>
+> **Release signing** — copy `keystore.properties.example` to
+> `keystore.properties` at the repo root with your own keystore (see the file
+> for the keytool command); without it, `./gradlew assembleRelease` falls
+> back to the debug signing config so builds stay installable.
 
 [Español(Argentina)](/READMEs/README_es-AR.md)|[Bahasa Indonesia](/READMEs/README_id-ID.md)|[Português Brasileiro](/READMEs/README_pt-BR.md)|[Українська](/READMEs/README_uk-UA.md)|[Tiếng Việt](/READMEs/README_vi-VN.md)|[فارسی](/READMEs/README_fa-IR.md)|[简体中文](/READMEs/README_zh-CN.md)
 
