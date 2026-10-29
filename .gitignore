@@ -6,3 +6,8 @@ build
 
 # Generated per-build identity (Task 1 scripts/gen_identity.sh output)
 module/identity.env
+
+# Gradle / Android app build outputs
+.gradle/
+app/build/
+local.properties
