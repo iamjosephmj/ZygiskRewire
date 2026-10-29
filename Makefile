@@ -138,6 +138,10 @@ $(MODULE_DONE): $(LOADER_DONE) $(ZYGISKD_DONE) $(BUILD_DIR)/identity.mk $(MODULE
 	@cp module/identity.env $(MODULE_OUT)/identity.env
 
 	@echo "Copying binaries..."
+# INFO: The staged bin/ + lib/ trees are kept for export_payload.sh and the
+#         machikado signatures (scripts/sign.py read them from the staging
+#         dir); the distributed zip EXCLUDES them — Phase 4 carries the
+#         runtime payload in the manager app's APK assets instead.
 	@ID_DAEMON_BIN=$$(sed -n 's/^ID_DAEMON_BIN := //p' $(BUILD_DIR)/identity.mk);  \
 		ID_PTRACER_BIN=$$(sed -n 's/^ID_PTRACER_BIN := //p' $(BUILD_DIR)/identity.mk); \
 		ID_LIB_NAME=$$(sed -n 's/^ID_LIB_NAME := //p' $(BUILD_DIR)/identity.mk);       \
@@ -173,7 +177,7 @@ $(ZIP_FILE): $(MODULE_DONE)
 	@rm -f $@
 
 	@echo "Creating ZIP file..."
-	@cd $(MODULE_OUT) && zip -r9 $@ . -x '*.DS_Store' > /dev/null
+	@cd $(MODULE_OUT) && zip -r9 $@ . -x '*.DS_Store' 'bin/*' 'lib/*' 'machikado.*' > /dev/null
 
 installKsu: build
 	$(ADB_CMD)su -c '/data/adb/ksu/bin/ksud module install $(INSTALL_PATH)'
