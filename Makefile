@@ -30,9 +30,14 @@ PAYLOAD_GOAL = $(if $(filter $(CURDIR)/build,$(BUILD_DIR)),$(PAYLOAD_PROPS))
 # The carrier APK is chained onto `make release` so ONE command always yields
 # a PAIRED zip+APK: a separate gradlew run would otherwise leave the APK's
 # embedded payload under a previous identity, and the boot stub's id
-# verification would (correctly) refuse the mismatched pair. Gate runs and any
-# BUILD_DIR override skip it — they must not touch the shared app outputs.
-CARRIER_GOAL = $(if $(filter $(CURDIR)/build,$(BUILD_DIR)),carrier-apk,)
+# verification would (correctly) refuse the mismatched pair.
+# It runs as a SERIAL recipe line of `release:` — deliberately NOT a parallel
+# goal — because a `carrier-apk` goal in the same $(MAKE) invocation races the
+# module build under `make -j` (gradle could embed the OLD identity against a
+# NEW zip). A recipe line after the inner $(MAKE) is guaranteed to start only
+# after the payload export has completed, serial or parallel. Gate runs and
+# any BUILD_DIR override skip it — they must not touch the shared app outputs.
+CARRIER_APK = $(if $(filter $(CURDIR)/build,$(BUILD_DIR)),yes,no)
 
 ifeq ($(TERMUX_VERSION),)
 	ADB_CMD := adb push $(ZIP_FILE) /data/local/tmp && adb shell 
@@ -59,7 +64,7 @@ MODULE_INPUTS = scripts/sign.py \
         $(wildcard module/private_key module/public_key)
 
 .PHONY: debug release build clean                                         \
-        identity app-payload carrier-apk                                  \
+        identity app-payload                                              \
         installKsu installMagisk installAPatch                            \
         installKsuAndReboot installMagiskAndReboot installAPatchAndReboot \
         analyzer
@@ -78,20 +83,23 @@ debug:
 
 release:
 	$(ROOT_DIR)/scripts/gen_identity.sh $(BUILD_DIR)
-	$(MAKE) BUILD_TYPE=release BUILD_DIR=$(BUILD_DIR) build $(PAYLOAD_GOAL) $(CARRIER_GOAL)
+	$(MAKE) BUILD_TYPE=release BUILD_DIR=$(BUILD_DIR) build $(PAYLOAD_GOAL)
+# INFO: Serial tail (see the CARRIER_APK note): gradle must see the FRESH
+#         payload, so it may only start after the inner $(MAKE) — and thus the
+#         payload export — has fully returned. Gradle failure is tolerated:
+#         the module zip stays complete and usable, but the APK is then STALE
+#         — print a loud neutral warning instead of failing the build.
+	@if [ "$(CARRIER_APK)" = "yes" ]; then \
+	  if ./gradlew assembleDebug assembleRelease; then \
+	    echo "Paired carrier APK built: app/build/outputs/apk/debug/app-debug.apk + app/build/outputs/apk/release/app-release.apk (same identity as $(ZIP_DIR)/$(MODULE_NAME)-$(VER_NAME)-$(VER_CODE)-$(COMMIT_HASH)-release.zip)"; \
+	  else \
+	    echo "WARNING: carrier APK build FAILED — any APK under app/build/outputs/ is STALE and its payload identity does NOT match $(ZIP_DIR)/$(MODULE_NAME)-$(VER_NAME)-$(VER_CODE)-$(COMMIT_HASH)-release.zip; rebuild with ./gradlew assembleDebug assembleRelease before installing the pair"; \
+	  fi; \
+	fi
 
 # Export the release module build into the app's payload assets on demand.
 app-payload:
 	$(MAKE) BUILD_TYPE=release BUILD_DIR=$(BUILD_DIR) $(PAYLOAD_GOAL)
-
-# Runs at the tail of `release` (primary build dir only), after the payload
-# refresh, so the APK always embeds the SAME identity as the module zip.
-# Gradle failure is tolerated: the module zip stays complete and usable, but
-# the APK is then STALE — print a loud neutral warning instead of failing.
-carrier-apk:
-	@./gradlew assembleDebug assembleRelease \
-	  && echo "Paired carrier APK built: app/build/outputs/apk/debug/app-debug.apk + app/build/outputs/apk/release/app-release.apk (same identity as $(ZIP_FILE))" \
-	  || echo "WARNING: carrier APK build FAILED — any APK under app/build/outputs/ is STALE and its payload identity does NOT match $(ZIP_FILE); rebuild with ./gradlew assembleDebug assembleRelease before installing the pair"
 
 # Runs after the module staging is complete; the exporter rewrites the whole
 # payload tree (including this props file) under the current identity.
