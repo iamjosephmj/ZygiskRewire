@@ -76,18 +76,23 @@ cd "$PAYLOAD" || exit 0
 MODULE_ID=$(sed -n 's/^id=//p' "$MODDIR/module.prop" 2>/dev/null)
 [ -n "$MODULE_ID" ] || exit 0
 
+# INFO: A truncated or empty identity.props must not verify vacuously — the
+#         id key is mandatory; if it was never seen the payload is foreign.
+ID_SEEN=""
 while IFS= read -r line || [ -n "$line" ]; do
   key="${line%%=*}"
   value="${line#*=}"
   case "$key" in
     id)
       [ "$value" = "$MODULE_ID" ] || exit 0
+      ID_SEEN=1
       ;;
     *.sha256)
       echo "$value  ${key%.sha256}" | sha256sum -c - >/dev/null 2>&1 || exit 0
       ;;
   esac
 done < identity.props
+[ -n "$ID_SEEN" ] || exit 0
 
 # INFO: Stage the verified payload. Binaries land flat in bin/ under their
 #         installed names (the monitor re-execs ./bin/... from $TMP_PATH as

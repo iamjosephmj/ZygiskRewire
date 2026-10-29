@@ -1,5 +1,28 @@
 # ReZygisk
 
+> **ZygiskRewire fork note** — this repository is a fork of PerformanC/ReZygisk
+> (GPL-3.0, upstream credit and license preserved). The fork adds a per-build
+> random identity and turns the manager app (`tech.thessemaj.zygiskrewire`)
+> into the payload carrier: every executing binary ships inside the installed
+> app's APK and the boot stub extracts, verifies (sha256 + module id) and runs
+> it from a tmpfs runtime dir — the module directory itself carries only
+> scripts, `module.prop`, `sepolicy.rule` and the webroot.
+>
+> **Build & install order** (the identity is regenerated on every module
+> build, so the APK and the module zip must come from the same build):
+>
+> 1. If an older `syscfg-*` module is installed, uninstall it first
+>    (`ksud module uninstall <id>` and reboot) — pre-fix zips do not clean
+>    stale modules automatically; current zips do it in `customize.sh`.
+> 2. `make release` — builds the module zip AND refreshes
+>    `app/src/main/assets/payload/` with the binaries of this identity.
+> 3. `./gradlew assembleDebug` — builds the carrier APK embedding those
+>    assets.
+> 4. Install BOTH fresh artifacts together: the APK
+>    (`app/build/outputs/apk/debug/app-debug.apk`) and the zip
+>    (`build/out/*.zip`). An APK/zip pair from different builds fails the
+>    id verification at boot and silently skips injection.
+
 [Español(Argentina)](/READMEs/README_es-AR.md)|[Bahasa Indonesia](/READMEs/README_id-ID.md)|[Português Brasileiro](/READMEs/README_pt-BR.md)|[Українська](/READMEs/README_uk-UA.md)|[Tiếng Việt](/READMEs/README_vi-VN.md)|[فارسی](/READMEs/README_fa-IR.md)|[简体中文](/READMEs/README_zh-CN.md)
 
 ReZygisk is a fork of Zygisk Next, a standalone implementation of Zygisk, providing Zygisk API support for KernelSU, APatch and Magisk.
