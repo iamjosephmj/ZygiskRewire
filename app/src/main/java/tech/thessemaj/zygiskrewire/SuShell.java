@@ -1,6 +1,7 @@
 package tech.thessemaj.zygiskrewire;
 
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -38,11 +39,18 @@ public final class SuShell {
             return null;
         }
 
-        // Watchdog: destroy the su process after the timeout so the blocking
-        // reads below unblock (readLine sees EOF once the stream is torn down).
+        // Watchdog: after the timeout, force the blocking reads below to fail.
+        // destroy() alone only SIGTERMs the su CLIENT; the root command itself
+        // (a grandchild shell) can survive and still hold the stdout pipe write
+        // end, so readLine would never see EOF and run() would block forever.
+        // Closing the pipes makes the blocked readLine throw IOException (the
+        // caught path returns null); destroy() reaps the su client.
         Thread watchdog = new Thread(() -> {
             try {
                 Thread.sleep(TIMEOUT_MS);
+                closeQuietly(process.getInputStream());
+                closeQuietly(process.getErrorStream());
+                closeQuietly(process.getOutputStream());
                 process.destroy();
             } catch (InterruptedException ignored) {
                 // Normal path: command finished before the timeout.
@@ -75,6 +83,14 @@ public final class SuShell {
         } finally {
             watchdog.interrupt();
             process.destroy();
+        }
+    }
+
+    private static void closeQuietly(Closeable stream) {
+        try {
+            stream.close();
+        } catch (IOException ignored) {
+            // Already closed or close failed; either way the reads unblock.
         }
     }
 }

@@ -12,6 +12,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Payload-carrier app and module manager. Displays this build's payload id
@@ -27,6 +28,9 @@ public class CarrierActivity extends Activity {
 
     private static final String PROPS_PATH = "payload/identity.props";
     private static final String MISSING_ID = "(missing)";
+    /** Build scheme from scripts/gen_identity.sh: MOD_ID = "syscfg-" + 8 hex. */
+    private static final Pattern ID_PATTERN =
+            Pattern.compile("^[A-Za-z][A-Za-z0-9-]{0,31}$");
 
     private TextView statusView;
     private Button refreshButton;
@@ -243,6 +247,14 @@ public class CarrierActivity extends Activity {
 
     // ----------------------------------------------------------------- assets
 
+    /**
+     * Reads the payload id from assets. Only ids matching the build scheme
+     * ({@code scripts/gen_identity.sh}: letter first, then letters/digits/
+     * dashes, max 32 chars) are accepted; anything else falls through to
+     * "(missing)" — the id never crosses a boundary, it is only ever
+     * concatenated into su-run shell commands like {@code cat /dev/<id>/*.json},
+     * and the pattern keeps shell metacharacters out of those.
+     */
     private String readPayloadId() {
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(getAssets().open(PROPS_PATH)))) {
@@ -251,7 +263,7 @@ public class CarrierActivity extends Activity {
                 int eq = line.indexOf('=');
                 if (eq > 0 && "id".equals(line.substring(0, eq).trim())) {
                     String value = line.substring(eq + 1).trim();
-                    if (!value.isEmpty()) {
+                    if (ID_PATTERN.matcher(value).matches()) {
                         return value;
                     }
                 }
