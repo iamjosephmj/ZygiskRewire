@@ -14,11 +14,13 @@
 > 1. If an older `syscfg-*` module is installed, uninstall it first
 >    (`ksud module uninstall <id>` and reboot) — pre-fix zips do not clean
 >    stale modules automatically; current zips do it in `customize.sh`.
-> 2. `make release` — builds the module zip AND refreshes
->    `app/src/main/assets/payload/` with the binaries of this identity.
-> 3. `./gradlew assembleDebug` — builds the carrier APK embedding those
->    assets.
-> 4. Install BOTH fresh artifacts together: the APK
+> 2. `make release` — builds the module zip, refreshes
+>    `app/src/main/assets/payload/` with the binaries of this identity, and
+>    then rebuilds the carrier APK so BOTH artifacts share this identity.
+>    If the gradle step fails, the zip is still complete but the APK is
+>    STALE — make prints a warning; rerun `./gradlew assembleDebug
+>    assembleRelease` before installing.
+> 3. Install BOTH fresh artifacts together: the APK
 >    (`app/build/outputs/apk/debug/app-debug.apk`) and the zip
 >    (`build/out/*.zip`). An APK/zip pair from different builds fails the
 >    id verification at boot and silently skips injection.

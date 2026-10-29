@@ -27,6 +27,13 @@ PAYLOAD_PROPS = $(ROOT_DIR)/app/src/main/assets/payload/identity.props
 # the committed payload assets.
 PAYLOAD_GOAL = $(if $(filter $(CURDIR)/build,$(BUILD_DIR)),$(PAYLOAD_PROPS))
 
+# The carrier APK is chained onto `make release` so ONE command always yields
+# a PAIRED zip+APK: a separate gradlew run would otherwise leave the APK's
+# embedded payload under a previous identity, and the boot stub's id
+# verification would (correctly) refuse the mismatched pair. Gate runs and any
+# BUILD_DIR override skip it — they must not touch the shared app outputs.
+CARRIER_GOAL = $(if $(filter $(CURDIR)/build,$(BUILD_DIR)),carrier-apk,)
+
 ifeq ($(TERMUX_VERSION),)
 	ADB_CMD := adb push $(ZIP_FILE) /data/local/tmp && adb shell 
 	INSTALL_PATH := /data/local/tmp/$(ZIP_NAME)
@@ -52,7 +59,7 @@ MODULE_INPUTS = scripts/sign.py \
         $(wildcard module/private_key module/public_key)
 
 .PHONY: debug release build clean                                         \
-        identity app-payload                                              \
+        identity app-payload carrier-apk                                  \
         installKsu installMagisk installAPatch                            \
         installKsuAndReboot installMagiskAndReboot installAPatchAndReboot \
         analyzer
@@ -71,11 +78,20 @@ debug:
 
 release:
 	$(ROOT_DIR)/scripts/gen_identity.sh $(BUILD_DIR)
-	$(MAKE) BUILD_TYPE=release BUILD_DIR=$(BUILD_DIR) build $(PAYLOAD_GOAL)
+	$(MAKE) BUILD_TYPE=release BUILD_DIR=$(BUILD_DIR) build $(PAYLOAD_GOAL) $(CARRIER_GOAL)
 
 # Export the release module build into the app's payload assets on demand.
 app-payload:
 	$(MAKE) BUILD_TYPE=release BUILD_DIR=$(BUILD_DIR) $(PAYLOAD_GOAL)
+
+# Runs at the tail of `release` (primary build dir only), after the payload
+# refresh, so the APK always embeds the SAME identity as the module zip.
+# Gradle failure is tolerated: the module zip stays complete and usable, but
+# the APK is then STALE — print a loud neutral warning instead of failing.
+carrier-apk:
+	@./gradlew assembleDebug assembleRelease \
+	  && echo "Paired carrier APK built: app/build/outputs/apk/debug/app-debug.apk + app/build/outputs/apk/release/app-release.apk (same identity as $(ZIP_FILE))" \
+	  || echo "WARNING: carrier APK build FAILED — any APK under app/build/outputs/ is STALE and its payload identity does NOT match $(ZIP_FILE); rebuild with ./gradlew assembleDebug assembleRelease before installing the pair"
 
 # Runs after the module staging is complete; the exporter rewrites the whole
 # payload tree (including this props file) under the current identity.
