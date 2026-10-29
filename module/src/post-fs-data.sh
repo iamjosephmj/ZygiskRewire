@@ -61,8 +61,8 @@ mount_overlay() {
   local work="${upper}.w"
   mkdir -p "$upper" "$work" 2>/dev/null || return 0
   cp "$staged/"*.so "$upper/" 2>/dev/null || return 0
-  chmod 644 "$upper/"* 2>/dev/null
-  chcon u:object_r:system_lib_file:s0 "$upper/"* 2>/dev/null
+  chmod 644 "$upper/"* 2>/dev/null || true
+  chcon u:object_r:system_lib_file:s0 "$upper/"* 2>/dev/null || true
   if ! grep -q " $lower overlay " /proc/mounts 2>/dev/null; then
     mount -t overlay overlay -o "lowerdir=$lower,upperdir=$upper,workdir=$work" "$lower" 2>/dev/null || true
   fi
