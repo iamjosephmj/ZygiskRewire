@@ -103,7 +103,7 @@ $(LIBCOMMON): $(COMMON_OBJS)
 
 $(LIBZYGISK): $(INJECTOR_OBJS) $(LIBCOMMON) $(PLTI_LIB) $(CSOLOADER_LIB)
 	@mkdir -p $(dir $@)
-	$(CC_ARCH) -fPIC -shared -Wl,-soname,$(ID_LIB_NAME)              \
+	$(CC_ARCH) -fPIC -shared -Wl,-soname,$(ID_LIB_NAME) -Wl,-z,text \
 		$(COMMON_LDFLAGS) $(TYPE_LDFLAGS) -nostartfiles            \
 		$(INJECTOR_OBJS) $(LIBCOMMON) $(PLTI_LIB) $(CSOLOADER_LIB) \
 		-llog -lm -o $@
