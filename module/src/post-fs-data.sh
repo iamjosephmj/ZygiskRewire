@@ -45,23 +45,30 @@ cp "$MODDIR/module.prop.bak" "$MODDIR/module.prop"
 # INFO: Some managers (KSU Next 3.4.0) have no module-mount implementation and
 #         never overlay module system/ trees. Mount the loader into /system ourselves:
 #         a directory-scoped overlayfs whose lower layer is the real /system/lib{,64}
-#         and whose upper layer is the module's staged copy. Real libraries keep working
-#         (they resolve to the lower layer); our loader appears as a new upper file.
-#         The workdir must live on the same filesystem as the upperdir (hence under
-#         $MODDIR, never tmpfs) and must not be shared between two live overlay mounts,
-#         so it is derived from the mount point.
+#         and whose upper layer is a copy of the module's staged loader. Real libraries
+#         keep working (they resolve to the lower layer); our loader appears as a new
+#         upper file.
+# INFO: The upper layer must live in the runtime tmpfs: this kernel (and others of the
+#         same era) rejects f2fs /data as any overlayfs layer — dmesg:
+#         "overlayfs: filesystem on '<module dir>' not supported" — so the module tree
+#         itself can be neither upperdir nor lowerdir. The persistent copy stays staged
+#         under $MODDIR/system/lib{,64}; the tmpfs copy is ephemeral inside the 0700
+#         runtime dir and is relabeled so zygote reads it exactly like a system lib.
 mount_overlay() {
-  local lower="$1" upper="$2"
-  [ -d "$upper" ] || return 0
+  local lower="$1" upper="$2" staged="$3"
+  [ -d "$staged" ] || return 0
   [ -d "$lower" ] || return 0
-  local work="$MODDIR/system/.ow${lower##*/}"
-  mkdir -p "$work" 2>/dev/null || return 0
+  local work="${upper}.w"
+  mkdir -p "$upper" "$work" 2>/dev/null || return 0
+  cp "$staged/"*.so "$upper/" 2>/dev/null || return 0
+  chmod 644 "$upper/"* 2>/dev/null
+  chcon u:object_r:system_lib_file:s0 "$upper/"* 2>/dev/null
   if ! grep -q " $lower overlay " /proc/mounts 2>/dev/null; then
     mount -t overlay overlay -o "lowerdir=$lower,upperdir=$upper,workdir=$work" "$lower" 2>/dev/null || true
   fi
 }
-mount_overlay /system/lib64 "$MODDIR/system/lib64"
-mount_overlay /system/lib "$MODDIR/system/lib"
+mount_overlay /system/lib64 "$TMP_PATH/ovl/lib64" "$MODDIR/system/lib64"
+mount_overlay /system/lib "$TMP_PATH/ovl/lib" "$MODDIR/system/lib"
 
 # INFO: Utilize the one with the biggest output, as some devices with Tango have the full list
 #         in ro.product.cpu.abilist but others only have a subset there, and the full list in
