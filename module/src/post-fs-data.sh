@@ -42,6 +42,27 @@ chmod 755 "$TMP_PATH/bin/"*
 #         so that it never duplicates the module status in there.
 cp "$MODDIR/module.prop.bak" "$MODDIR/module.prop"
 
+# INFO: Some managers (KSU Next 3.4.0) have no module-mount implementation and
+#         never overlay module system/ trees. Mount the loader into /system ourselves:
+#         a directory-scoped overlayfs whose lower layer is the real /system/lib{,64}
+#         and whose upper layer is the module's staged copy. Real libraries keep working
+#         (they resolve to the lower layer); our loader appears as a new upper file.
+#         The workdir must live on the same filesystem as the upperdir (hence under
+#         $MODDIR, never tmpfs) and must not be shared between two live overlay mounts,
+#         so it is derived from the mount point.
+mount_overlay() {
+  local lower="$1" upper="$2"
+  [ -d "$upper" ] || return 0
+  [ -d "$lower" ] || return 0
+  local work="$MODDIR/system/.ow${lower##*/}"
+  mkdir -p "$work" 2>/dev/null || return 0
+  if ! grep -q " $lower overlay " /proc/mounts 2>/dev/null; then
+    mount -t overlay overlay -o "lowerdir=$lower,upperdir=$upper,workdir=$work" "$lower" 2>/dev/null || true
+  fi
+}
+mount_overlay /system/lib64 "$MODDIR/system/lib64"
+mount_overlay /system/lib "$MODDIR/system/lib"
+
 # INFO: Utilize the one with the biggest output, as some devices with Tango have the full list
 #         in ro.product.cpu.abilist but others only have a subset there, and the full list in
 #         ro.system.product.cpu.abilist
