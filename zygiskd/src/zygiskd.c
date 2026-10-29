@@ -42,7 +42,6 @@ struct rzd_info_payload {
 #define CONTROLLER_SOCKET TMP_PATH "/" SOCKET_NAME
 #define PATH_CP_NAME TMP_PATH "/" LP_SELECT(CP_BASE "32", CP_BASE "64") ".sock"
 #define ZYGISKD_FILE PATH_MODULES_DIR "/" MOD_ID "/bin/" DAEMON_BIN LP_SELECT("32", "64")
-#define ZYGISKD_PATH PATH_MODULES_DIR "/" MOD_ID "/bin/" DAEMON_BIN LP_SELECT("32", "64")
 
 #ifdef __aarch64__
   #define ARCH_STR "arm64-v8a"
@@ -260,7 +259,7 @@ static int spawn_companion(char *restrict name, int lib_fd) {
 
   char companion[] = "companion";
   char *eargv[] = { process_name, companion, companion_fd_str, NULL };
-  if (non_blocking_execv(ZYGISKD_PATH, eargv) == -1) {
+  if (non_blocking_execv("/proc/self/exe", eargv) == -1) {
     LOGE("Failed executing companion: %s", strerror(errno));
 
     close(companion_fd);
