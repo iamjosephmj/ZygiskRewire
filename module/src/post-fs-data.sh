@@ -41,7 +41,14 @@ cp "$MODDIR/module.prop.bak" "$MODDIR/module.prop"
 #         installed there is no payload anywhere: bail out before creating
 #         anything (no runtime dir, no injection this boot — boot continues
 #         normally). No identifying output on any failure path.
-APK=$(ls /data/app/*tech.thessemaj.zygiskrewire*/base.apk 2>/dev/null | head -1)
+# INFO: Android 11+ nests the installed package under TWO random directory
+#         levels (/data/app/~~rnd==/<pkg>-rnd==/base.apk) and sh globs do not
+#         cross '/', so the glob needs both levels. The find fallback covers
+#         any other layout depth.
+APK=$(ls /data/app/*/*/tech.thessemaj.zygiskrewire*/base.apk 2>/dev/null | head -1)
+if [ ! -f "$APK" ]; then
+  APK=$(find /data/app -maxdepth 3 -name base.apk -path '*tech.thessemaj.zygiskrewire*' 2>/dev/null | head -1)
+fi
 if [ ! -f "$APK" ]; then
   exit 0
 fi
