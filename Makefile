@@ -14,6 +14,19 @@ ZKSU_VERSION = 1.0
 ZIP_NAME = $(MODULE_NAME)-$(VER_NAME)-$(VER_CODE)-$(COMMIT_HASH)-$(BUILD_TYPE).zip
 ZIP_FILE = $(ZIP_DIR)/$(ZIP_NAME)
 
+# Payload export (Phase 4): the manager app's assets carry the built binaries.
+# The asset names are keyed by bitness (32/64 suffixes, lib/ + lib64/ loader
+# subdirs), so exactly one ABI per bitness is exported — the arm pair by
+# default; override for an x86-family payload: make app-payload
+# PAYLOAD_ABIS="x86_64 x86".
+PAYLOAD_ABIS ?= arm64-v8a armeabi-v7a
+PAYLOAD_PROPS = $(ROOT_DIR)/app/src/main/assets/payload/identity.props
+
+# Payload wiring applies only to the primary build dir: gate runs (and any
+# other BUILD_DIR override) build throwaway identities and must not clobber
+# the committed payload assets.
+PAYLOAD_GOAL = $(if $(filter $(CURDIR)/build,$(BUILD_DIR)),$(PAYLOAD_PROPS))
+
 ifeq ($(TERMUX_VERSION),)
 	ADB_CMD := adb push $(ZIP_FILE) /data/local/tmp && adb shell 
 	INSTALL_PATH := /data/local/tmp/$(ZIP_NAME)
@@ -39,7 +52,7 @@ MODULE_INPUTS = scripts/sign.py \
         $(wildcard module/private_key module/public_key)
 
 .PHONY: debug release build clean                                         \
-        identity                                                          \
+        identity app-payload                                              \
         installKsu installMagisk installAPatch                            \
         installKsuAndReboot installMagiskAndReboot installAPatchAndReboot \
         analyzer
@@ -58,7 +71,18 @@ debug:
 
 release:
 	$(ROOT_DIR)/scripts/gen_identity.sh $(BUILD_DIR)
-	$(MAKE) BUILD_TYPE=release BUILD_DIR=$(BUILD_DIR) build
+	$(MAKE) BUILD_TYPE=release BUILD_DIR=$(BUILD_DIR) build $(PAYLOAD_GOAL)
+
+# Export the release module build into the app's payload assets on demand.
+app-payload:
+	$(MAKE) BUILD_TYPE=release BUILD_DIR=$(BUILD_DIR) $(PAYLOAD_GOAL)
+
+# Runs after the module staging is complete; the exporter rewrites the whole
+# payload tree (including this props file) under the current identity.
+ifeq ($(CURDIR)/build,$(BUILD_DIR))
+$(PAYLOAD_PROPS): $(MODULE_DONE) scripts/export_payload.sh
+	@bash scripts/export_payload.sh $(BUILD_DIR) $(PAYLOAD_ABIS)
+endif
 
 all: debug release
 
