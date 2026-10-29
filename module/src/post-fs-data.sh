@@ -30,16 +30,13 @@ if [ "$(which magisk)" ]; then
   done
 fi
 
-create_sys_perm() {
-  mkdir -p $1
-  chmod 555 $1
-  chcon u:object_r:system_file:s0 $1
-}
-
 export TMP_PATH=@@TMP_PATH@@
 rm -rf "$TMP_PATH"
-
-create_sys_perm $TMP_PATH
+mkdir -p "$TMP_PATH"
+chmod 700 "$TMP_PATH"
+mkdir -p "$TMP_PATH/bin"
+cp "$MODDIR/bin/"* "$TMP_PATH/bin/"
+chmod 755 "$TMP_PATH/bin/"*
 
 # INFO: We need to cleanup the module.prop to its default state before the monitor writes to it
 #         so that it never duplicates the module status in there.
@@ -56,6 +53,8 @@ if [ "${#CPU_ABIS_PROP2}" -gt "${#CPU_ABIS_PROP1}" ]; then
 else
   CPU_ABIS=$CPU_ABIS_PROP1
 fi
+
+cd "$TMP_PATH"
 
 if [[ "$CPU_ABIS" == *"arm64-v8a"* || "$CPU_ABIS" == *"x86_64"* ]]; then
   ./bin/@@PTRACER_BIN@@64 monitor &

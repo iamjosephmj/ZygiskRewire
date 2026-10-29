@@ -20,6 +20,7 @@ allow zygote nsfs file {read open}
 allow zygote zygote process execmem
 allow system_server system_server process execmem
 allow zygote tmpfs file *
+allow zygote tmpfs dir { search getattr open read };
 allow zygote appdomain_tmpfs file *
 
 # INFO: Needed for Tango Zygote
