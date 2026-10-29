@@ -94,6 +94,22 @@
 
 ---
 
+### Task 7: Third-party module library system-mimic
+
+**Files:**
+- Modify: `module/src/post-fs-data.sh` (stage every third-party module's zygisk `.so` into the overlay upper with neutral names; write `.ovl` marker into each module's zygisk dir)
+- Modify: `zygiskd/src/zygiskd.c` (ReadModules handler: per module, if `<module>/zygisk/.ovl` exists, send `/system/lib64/<neutral>.so` as the lib_path; else the module-dir path — fallback)
+
+**Interfaces:**
+- Consumes: the existing overlay upper (`$TMP_PATH/ovl/lib{,64}`) mounted at `/system/lib{,64}`.
+- Produces: every third-party module library mapped file-backed from `/system/lib64/<neutral>.so` in app maps (no `/data/adb/modules` paths in maps); fallback preserved for unstaged modules.
+
+- [ ] **Step 1: Stub staging** — in post-fs-data.sh, after the payload staging: for each dir in /data/adb/modules/*/zygisk/ (excluding the syscfg module id) with `<arch>.so` files, copy each to `$TMP_PATH/ovl/lib64/<neutral>.so` (neutral = `ov` + 8 hex chars, unique per module, deterministic from the module id hash so reboots are stable), write the neutral name into `<module>/zygisk/.ovl`. Both arch dirs (lib/lib64) when present.
+- [ ] **Step 2: ksud path construction** — in the ReadModules handler: for each scanned module, read `<module>/zygisk/.ovl`; if present and `/system/lib64/<neutral>.so` exists (overlay mounted), send that path; else send the module-dir path (fallback).
+- [ ] **Step 3: Verify** — make release OK; gate PASS; device: zygote maps show `/system/lib64/<neutral>.so` for PIF + helloworld; the hello banner still renders; the state json module list unchanged.
+
+- [ ] **Commit** — `feat: third-party module libraries load from system overlay paths`
+
 ## Self-Review Notes
 
 - Spec §3 UI port: covered by T1 (status + control; the full webroot parity — module list page — is NOT ported; ruling: status+control is the manager surface, module listing stays in the KSU WebUI. Recorded deviation).
