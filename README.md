@@ -64,9 +64,9 @@ Nothing in an app's memory maps points at `/data/adb`:
 ```mermaid
 flowchart LR
     subgraph app maps
-        A["/system/lib64/lib<random>.so (loader, RELRO)"]
-        B["/system/lib64/ov<hash>.so (PIF)"]
-        C["/system/lib64/ov<hash>.so (helloworld)"]
+        A["/system/lib64/lib(random).so (loader, RELRO)"]
+        B["/system/lib64/ov(hash).so (PIF)"]
+        C["/system/lib64/ov(hash).so (helloworld)"]
         D["...real system libs..."]
     end
     subgraph overlayfs on /system/lib64
