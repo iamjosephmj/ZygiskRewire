@@ -83,7 +83,46 @@ their namespaces. The mapped pages can persist in an already-running process
 (inherent to the mimic design, same as upstream); recorded as an accepted
 residual.
 
-## 7. Residual detector surface (accepted, recorded)
+## 7. Root-manager identification without PackageManager
+
+The daemon must know which UID belongs to the root manager: `GetProcessFlags`
+compares every specializing process against it and sets `PROCESS_IS_MANAGER`
+(the loader then sets `ZYGISK_ENABLED` for the manager and skips the
+clean-mount-namespace update for it, and manager processes are excluded from
+the denylist branch entirely). But the daemon never asks PackageManager.
+Package-based resolution fails exactly when it matters — root managers hide
+themselves from PackageManager (Magisk's "Hide the Magisk app" repackages the
+app under a random package name; KSU-family managers hide the app or ship
+under variant-specific names) — and a PM query from the daemon would put a
+recognizable IPC on the binder. Instead, identification is root-side only:
+
+- **`uid_from_pkg()` (`zygiskd/src/root_impl/common.c`)** maps a package name
+  to a UID without PackageManager: it walks `/data/user` and stats
+  `/data/user_de/<user>/<pkg>` — the device-protected data dir still exists
+  and is owned by the app's UID no matter how the package presents to PM.
+  `APP_ID()` strips the user portion, so multi-user installs match. On
+  failure it returns 0, which is safe as a fail signal because Android never
+  assigns UID 0 to an app.
+- **Magisk** (`magisk.c`): the active (possibly randomized) package name is
+  read from Magisk's own database — `magisk --sqlite "select value from
+  strings where key='requester'"` records the repackaged app id — falling
+  back to `com.topjohnwu.magisk`, then `uid_from_pkg()`.
+- **KernelSU** (`kernelsu.c`): preferred is the kernel's own answer —
+  `prctl(KSU_INSTALL_MAGIC1, CMD_GET_MANAGER_UID, ...)` on prctl-style
+  builds, `KSU_IOCTL_GET_MANAGER_UID` on ksuctl builds. This is spoof-
+  resistant: a fake KSU manager with a different package name still matches,
+  because the UID comes from the kernel rather than any data-dir layout.
+  Legacy variants fall back to `uid_from_pkg()` over the variant's manager
+  package list (`me.weishu.kernelsu`, `com.rifsxd.ksunext`).
+- **APatch** (`apatch.c`): fixed package `me.bmax.apatch` via
+  `uid_from_pkg()`.
+
+The consequence for stealth: the daemon never opens a channel a detector can
+observe or influence (no binder PM calls, no package lists read at runtime),
+and manager detection keeps working while the manager is invisible to
+PackageManager.
+
+## 8. Residual detector surface (accepted, recorded)
 
 - `TracerPid` of init (ptrace-on-init architecture).
 - Solist cross-check: the loader is invisible to `dl_iterate_phdr` (solist
@@ -95,7 +134,7 @@ residual.
   SUSFS-equipped managers can hide it).
 - Package name of the carrier app and the (hidden) manager.
 
-## 8. Validation methodology
+## 9. Validation methodology
 
 Every phase lands only after: gate (`scripts/check_identity.sh`) PASS, per-task
 review waves with device evidence, a final whole-branch adversarial review, and
