@@ -1,108 +1,57 @@
-# ReZygisk
+# ZygiskRewire
 
-> **ZygiskRewire fork note** — this repository is a fork of PerformanC/ReZygisk
-> (GPL-3.0, upstream credit and license preserved). The fork adds a per-build
-> random identity and turns the manager app (`tech.thessemaj.zygiskrewire`)
-> into the payload carrier: every executing binary ships inside the installed
-> app's APK and the boot stub extracts, verifies (sha256 + module id) and runs
-> it from a tmpfs runtime dir — the module directory itself carries only
-> scripts, `module.prop`, `sepolicy.rule` and the webroot.
->
-> **Build & install order** (the identity is regenerated on every module
-> build, so the APK and the module zip must come from the same build):
->
-> 1. If an older `syscfg-*` module is installed, uninstall it first
->    (`ksud module uninstall <id>` and reboot) — pre-fix zips do not clean
->    stale modules automatically; current zips do it in `customize.sh`.
-> 2. `make release` — builds the module zip, refreshes
->    `app/src/main/assets/payload/` with the binaries of this identity, and
->    then rebuilds the carrier APK so BOTH artifacts share this identity.
->    If the gradle step fails, the zip is still complete but the APK is
->    STALE — make prints a warning; rerun `./gradlew assembleDebug
->    assembleRelease` before installing.
-> 3. Install BOTH fresh artifacts together: the APK
->    (`app/build/outputs/apk/debug/app-debug.apk`) and the zip
->    (`build/out/*.zip`). An APK/zip pair from different builds fails the
->    id verification at boot and silently skips injection.
->
-> **Release signing** — copy `keystore.properties.example` to
-> `keystore.properties` at the repo root with your own keystore (see the file
-> for the keytool command); without it, `./gradlew assembleRelease` falls
-> back to the debug signing config so builds stay installable.
+A stealth re-engineering of Zygisk: every build carries a fresh random
+identity, the runtime lives on tmpfs, the loader and all third-party module
+libraries present as system libraries, and the entire payload ships inside the
+manager app's APK.
 
-[Español(Argentina)](/READMEs/README_es-AR.md)|[Bahasa Indonesia](/READMEs/README_id-ID.md)|[Português Brasileiro](/READMEs/README_pt-BR.md)|[Українська](/READMEs/README_uk-UA.md)|[Tiếng Việt](/READMEs/README_vi-VN.md)|[فارسی](/READMEs/README_fa-IR.md)|[简体中文](/READMEs/README_zh-CN.md)
+> **Credits** — ZygiskRewire is a fork of
+> [PerformanC/ReZygisk](https://github.com/PerformanC/ReZygisk) (GPL-3.0;
+> upstream, its authors, and its license are credited and preserved). Upstream
+> channels: [PerformanC Discord](https://discord.gg/uPveNfTuCJ),
+> [ReZygisk Telegram](https://t.me/rezygisk),
+> [@performancorg](https://t.me/performancorg) on Telegram.
 
-ReZygisk is a fork of Zygisk Next, a standalone implementation of Zygisk, providing Zygisk API support for KernelSU, APatch and Magisk.
+## Architecture
 
-The codebase has been rewritten to C entirely, bringing not only a much cleaner codebase that is easier to follow, but also a lighter binaries that are also faster. Custom linkers also have been introduced to future-proof ReZygisk against future detections, not using system linker at all in normal circunstances, defeating any linker-based detection.
+- **Per-build random identity** — module id, binary names, library names,
+  socket names, SELinux type, and log tags are regenerated on every
+  `make release`; two builds share nothing.
+- **Boot-from-APK payload** — the manager app (`tech.thessemaj.zygiskrewire`)
+  carries the daemon, ptracer, and loader in its assets; `post-fs-data.sh`
+  locates the installed APK, extracts the payload into a tmpfs runtime dir
+  (`/dev/<id>/`), verifies every file's sha256 plus the module id against the
+  build manifest, and refuses silently on any mismatch.
+- **Tmpfs runtime, scripts-only module dir** — no binaries persist under
+  `/data/adb`; the module directory carries scripts, `module.prop`,
+  `sepolicy.rule`, and the webroot only. Upgrades prune stale modules before
+  they can race for the init ptrace.
+- **System-library mimic** — the loader library is mapped file-backed from
+  `/system/lib64/<random>.so` via a directory-scoped overlayfs; no text
+  relocations, full RELRO, exec text byte-identical to the overlay file.
+- **Third-party modules: the same mimic** — module libraries are staged into
+  the overlay under neutral names and mapped from `/system/lib64/<neutral>.so`;
+  module-dir paths never appear in app memory maps.
+- **Denylist** — denylisted apps have the overlay detached from their
+  namespaces: no loader, no module libraries, no mount entries.
+- **Manager UI** — the carrier app provides root-backed status and
+  start/stop control over the tmpfs runtime (dark terminal HUD); the KSU
+  WebUI remains for module listing.
 
-## Why?
+See [docs/METHODOLOGY.md](docs/METHODOLOGY.md) for the full stealth
+methodology, invariants, and the recorded residual detector surface.
 
-The latest releases of Zygisk Next are not open-source, reserving entirely the code for its developers. Not only does that limit our ability to contribute to the project, but also impossibilities the audit of the code, which is a major security concern, as Zygisk Next is a module that runs with superuser (root) privileges, having access to the entire system.
+## Build
 
-The Zygisk Next developers are famous and trusted in the Android community, however, this doesn't mean that the code is not malicious or vulnerable. We (PerformanC) understand they have their reasons to keep the code closed-source, but we believe the contrary.
+```sh
+make identity          # mint this build's random identity
+JAVA_HOME=<jbr> make release   # module zip + paired carrier APKs
+./gradlew assembleDebug        # (alternative) carrier app only
+```
 
-## Advantages
-
-- FOSS (Forever)
-
-## Dependencies
-
-| Tool            | Description                            |
-|-----------------|----------------------------------------|
-| `Android NDK`   | Native Development Kit for Android     |
-
-### C Dependencies
-
-| Dependency  | Description                   |
-|-------------|-------------------------------|
-| `PLTI`      | Simple PLT Hook for Android   |
-| `CSOLoader` | SOTA Linux custom linker      |
-
-## Installation
-
-### 1. Select the right zip
-
-The selection of the build/zip is important, as it will determine how hidden and stable ReZygisk will be. This, however, is not a hard task:
-
-- `release` should be the one chosen for most cases, it removes app-level logging and offers more optimized binaries.
-- `debug`, however, offers the opposite, with heavy logging and no optimizations, For this reason, **you should only use it for debugging purposes** and **when obtaining logs for creating an Issue**.
-
-As for branches, you should always use the `main` branch, unless told otherwise by the developers, or if you want to test upcoming features and are aware of the risks involved.
-
-### 2. Flash the zip
-
-After choosing the right build, you should flash it using your current root manager, like Magisk or KernelSU. You can do this by going to the `Modules` section of your root manager and selecting the zip you downloaded.
-
-After flashing, check the installation logs to ensure there are no errors, and if everything is fine, you can reboot your device.
-
-> [!WARNING]
-> Magisk users should disable built-in Zygisk, as it will conflict with ReZygisk. This can be done by going to the `Settings` section of Magisk and disabling the `Zygisk` option.
-
-### 3. Verify the installation
-
-After rebooting, you can verify if ReZygisk is working properly by checking the module description in the `Modules` section of your root manager. The description should indicate that the necessary daemons are running. For example, if your environment supports both 64-bit and 32-bit, it should look similar to this: `[Monitor: ✅, ReZygisk 64-bit: ✅, ReZygisk 32-bit: ✅] Standalone implementation of Zygisk.`
-
-## Translation
-
-There are currently two different ways to contribute translations for ReZygisk:
-
-- For translations of the README, you can create a new file in the `READMEs` folder, following the naming convention of `README_<language>.md`, where `<language>` is the language code (e.g., `README_pt-BR.md` for Brazilian Portuguese), and open a pull request to the `main` branch with your changes.
-- For translations of the ReZygisk WebUI, you should first contribute to our [Crowdin](https://crowdin.com/project/rezygisk). Once approved retrieve the `.json` file from there and open a pull request with your changes -- adding the `.json` file to the `webroot/lang` folder and your credits to the `TRANSLATOR.md` file, in alphabetic order.
-
-## Support
-
-For any question related to ReZygisk or other PerformanC projects, feel free to join any of the following channels below:
-
-- Discord Channel: [PerformanC](https://discord.gg/uPveNfTuCJ)
-- ReZygisk Telegram Channel: [@rezygisk](https://t.me/rezygisk)
-- PerformanC Telegram Channel: [@performancorg](https://t.me/performancorg)
-- PerformanC Signal Group: [@performanc](https://signal.group/#CjQKID3SS8N5y4lXj3VjjGxVJnzNsTIuaYZjj3i8UhipAS0gEhAedxPjT5WjbOs6FUuXptcT)
-
-## Contribution
-
-It is mandatory to follow PerformanC's [Contribution Guidelines](https://github.com/PerformanC/contributing) to contribute to ReZygisk. Following its Security Policy, Code of Conduct, and syntax standard.
+Install: flash `build/out/SysConfig-*.zip` via your manager, install
+`app/build/outputs/apk/debug/app-debug.apk`, reboot.
 
 ## License
 
-ReZygisk is licensed under [AGPL 3.0](./LICENSE). You can read more about it on [Open Source Initiative](https://opensource.org/licenses/AGPL-3.0).
+GPL-3.0 — inherited from upstream ReZygisk; see [LICENSE](./LICENSE).
