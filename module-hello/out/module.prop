@@ -1,6 +1,0 @@
-id=helloworld
-name=Hello World Validator
-version=v1.0
-versionCode=1
-author=ZygiskRewire
-description=Validation module: shows a "Hello World" banner on every activity, proving the ZygiskRewire module pipeline end to end.
