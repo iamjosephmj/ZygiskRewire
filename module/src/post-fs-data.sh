@@ -109,6 +109,71 @@ mv lib/* "$TMP_PATH/ovl/lib/" 2>/dev/null || exit 0
 mv @@DAEMON_BIN@@32 @@DAEMON_BIN@@64 @@PTRACER_BIN@@32 @@PTRACER_BIN@@64 "$TMP_PATH/bin/" || exit 0
 chmod 755 "$TMP_PATH/bin/"* 2>/dev/null || exit 0
 
+# INFO: Stage third-party module libraries (foreign injected modules living
+#         under /data/adb/modules) into the overlay upper under
+#         NEUTRAL names so the loader maps them from /system/lib64/<neutral>.so
+#         and app memory maps never expose /data/adb/modules paths. The
+#         neutral name is "ov" + the first 8 hex chars of sha256(module id) —
+#         deterministic per module id, so staged names are stable across
+#         reboots and the .ovl marker ksud reads stays valid. Both bitness
+#         libraries are staged when present (arm64-v8a -> ovl/lib64,
+#         armeabi-v7a -> ovl/lib). The neutral basename is written to
+#         <module>/zygisk/.ovl; ksud's ReadModules handler prefers
+#         /system/lib64/<neutral>.so when the marker exists and the file is
+#         accessible, and falls back to the module-dir path otherwise
+#         (modules staged by an older build or whose staging failed).
+#         Disabled modules are skipped, mirroring ksud's own module scan.
+#         Everything here is best-effort: any staging failure just means that
+#         module keeps loading from its module-dir path.
+# INFO: This runs BEFORE the overlay mount below, so the staged copies are
+#         upper-layer files at mount time, and BEFORE ksud/zygote start — the
+#         markers exist by the time the loader requests the module list.
+SELF_ID="$MODULE_ID"
+if [ -f "$MODDIR/identity.env" ]; then
+  set +e
+  # shellcheck disable=SC1091
+  . "$MODDIR/identity.env"
+  set -e
+  if [ -n "$ID_MOD_ID" ]; then
+    SELF_ID="$ID_MOD_ID"
+  fi
+fi
+
+stage_module_libs() {
+  local self_id="$1" dir moddir modid hash neutral arch bits src dest staged
+  for dir in /data/adb/modules/*/zygisk; do
+    [ -d "$dir" ] || continue
+    moddir="${dir%/zygisk}"
+    modid="${moddir##*/}"
+    if [ "$modid" = "$self_id" ]; then
+      continue
+    fi
+    if [ -f "$moddir/disable" ]; then
+      continue
+    fi
+    hash=$(printf '%s' "$modid" | sha256sum | cut -c1-8) || continue
+    neutral="ov${hash}.so"
+    staged=""
+    for arch in arm64-v8a:lib64 armeabi-v7a:lib; do
+      bits="${arch#*:}"
+      arch="${arch%:*}"
+      src="$moddir/zygisk/$arch.so"
+      [ -f "$src" ] || continue
+      dest="$TMP_PATH/ovl/$bits/$neutral"
+      cp "$src" "$dest" 2>/dev/null || continue
+      chmod 644 "$dest" 2>/dev/null || true
+      chcon u:object_r:system_lib_file:s0 "$dest" 2>/dev/null || true
+      staged=1
+    done
+    if [ -n "$staged" ]; then
+      printf '%s\n' "$neutral" > "$moddir/zygisk/.ovl" 2>/dev/null || true
+      chmod 644 "$moddir/zygisk/.ovl" 2>/dev/null || true
+    fi
+  done
+  return 0
+}
+stage_module_libs "$SELF_ID"
+
 cd "$TMP_PATH"
 rm -rf "$TMP_PATH/assets"
 

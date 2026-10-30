@@ -514,6 +514,49 @@ void daemon_start(void) {
           char lib_path[PATH_MAX];
           snprintf(lib_path, PATH_MAX, "/data/adb/modules/%s/zygisk/" ARCH_STR ".so", context.modules[i].name);
 
+          /* INFO: The boot stub stages every third-party module library into
+                     the /system/lib{,64} overlay upper under a NEUTRAL name
+                     ("ov" + first 8 hex chars of sha256(module id)) and
+                     records that basename in <module>/zygisk/.ovl. Prefer the
+                     staged system path when the marker exists AND the staged
+                     file is accessible (the overlay is mounted in this
+                     namespace at that point): app memory maps then show
+                     /system/lib64/ov*.so instead of /data/adb/modules paths.
+                     Anything else — no marker (module staged by an older
+                     build), unreadable marker, malformed basename, or the
+                     staged file missing — keeps the module-dir path as the
+                     fallback. The basename is validated against the exact
+                     generated form so marker contents are never interpolated
+                     into a path. */
+          char marker_path[PATH_MAX];
+          snprintf(marker_path, PATH_MAX, "/data/adb/modules/%s/zygisk/.ovl", context.modules[i].name);
+
+          FILE *marker = fopen(marker_path, "re");
+          if (marker != NULL) {
+            char neutral[128];
+            if (fgets(neutral, sizeof(neutral), marker) != NULL) {
+              neutral[strcspn(neutral, "\r\n")] = '\0';
+
+              /* INFO: Exactly "ov" + 8 hex chars + ".so" (13 chars), as written by the boot stub. */
+              bool valid = strlen(neutral) == 13 && strncmp(neutral, "ov", 2) == 0 && strcmp(neutral + 10, ".so") == 0;
+              for (size_t c = 2; valid && c < 10; c++) {
+                char ch = neutral[c];
+                if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F'))) valid = false;
+              }
+
+              if (valid) {
+                char sys_path[PATH_MAX];
+                snprintf(sys_path, PATH_MAX, "/system/lib64/%s", neutral);
+
+                if (access(sys_path, R_OK) == 0) {
+                  snprintf(lib_path, PATH_MAX, "%s", sys_path);
+                }
+              }
+            }
+
+            fclose(marker);
+          }
+
           if (write_string(client_fd, lib_path) == -1) {
             LOGE("Failed writing module path.");
 
