@@ -120,6 +120,11 @@ rm -f /data/adb/service.d/syscfg-*.sh
 ui_print "- Extracting module files"
 extract "$ZIPFILE" 'module.prop'     "$MODPATH"
 extract "$ZIPFILE" 'post-fs-data.sh' "$MODPATH"
+# INFO: identity.env is re-extracted into the module dir so the boot stub can
+#         read its own module id (ID_MOD_ID) at post-fs-data time — it uses
+#         that to exclude itself when staging third-party module libraries
+#         into the overlay under neutral names.
+extract "$ZIPFILE" 'identity.env'    "$MODPATH"
 extract "$ZIPFILE" 'service.sh'      "$MODPATH"
 extract "$ZIPFILE" 'uninstall.sh'    "$MODPATH"
 extract "$ZIPFILE" "${ID_MOD_ID}.sh" "/data/adb/service.d/"
