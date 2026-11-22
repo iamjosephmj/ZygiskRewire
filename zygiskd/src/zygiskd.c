@@ -392,6 +392,15 @@ void daemon_start(void) {
 
         break;
       }
+      case OverlayConsumed: {
+        struct rzd_msg_header hdr = {
+          .cmd = OVERLAY_CONSUMED,
+          .len = 0
+        };
+        unix_datagram_sendto(CONTROLLER_SOCKET, &hdr, sizeof(hdr));
+
+        break;
+      }
       case ZygoteRestart: {
         for (size_t i = 0; i < context.len; i++) {
           if (context.modules[i].companion <= -1) continue;

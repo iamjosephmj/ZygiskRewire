@@ -18,7 +18,11 @@ enum daemon_command {
   DAEMON64_SET_INFO = 6,
   DAEMON32_SET_INFO = 7,
   DAEMON64_SET_ERROR_INFO = 8,
-  DAEMON32_SET_ERROR_INFO = 9
+  DAEMON32_SET_ERROR_INFO = 9,
+
+  /* sent from daemon after the arch's loader acked overlay consumption */
+  OVERLAY64_CONSUMED = 10,
+  OVERLAY32_CONSUMED = 11
 };
 
 int send_control_command(enum daemon_command cmd);

@@ -314,6 +314,15 @@ void daemon_zygote_restart() {
   close(fd);
 }
 
+void daemon_overlay_consumed() {
+  int fd = daemon_connect(1);
+  if (fd == -1) return;
+
+  safe_write(write_uint8_t(fd, (uint8_t)OverlayConsumed), "OverlayConsumed action", return);
+
+  close(fd);
+}
+
 bool daemon_update_mns(enum mount_namespace_state nms_state, char *buf, size_t buf_size) {
   int fd = daemon_connect(1);
   if (fd == -1) return false;

@@ -14,7 +14,8 @@ enum daemon_actions {
   GetModuleDir,
   ZygoteRestart,
   UpdateMountNamespace,
-  RemoveModule
+  RemoveModule,
+  OverlayConsumed
 };
 
 struct loaded_modules {
@@ -66,6 +67,7 @@ int daemon_connect_companion(size_t index);
 int daemon_get_module_dir(size_t index);
 
 void daemon_zygote_restart();
+void daemon_overlay_consumed();
 
 bool daemon_update_mns(enum mount_namespace_state nms_state, char *buf, size_t buf_size);
 
