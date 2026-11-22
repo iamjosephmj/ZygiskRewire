@@ -177,32 +177,20 @@ stage_module_libs "$SELF_ID"
 cd "$TMP_PATH"
 rm -rf "$TMP_PATH/assets"
 
-# INFO: Some managers (KSU Next 3.4.0) have no module-mount implementation and
-#         never overlay module system/ trees. Mount the loader into /system ourselves:
-#         a directory-scoped overlayfs whose lower layer is the real /system/lib{,64}
-#         and whose upper layer is the tmpfs copy of the payload's loader. Real libraries
-#         keep working (they resolve to the lower layer); our loader appears as a new
-#         upper file.
-# INFO: The upper layer lives in the runtime tmpfs: this kernel (and others of the
-#         same era) rejects f2fs /data as any overlayfs layer — dmesg:
-#         "overlayfs: filesystem on '<module dir>' not supported" — so neither the
-#         module tree nor /data can be upperdir or lowerdir. The verified loader copy
-#         is moved into the tmpfs overlay tree above, kept ephemeral inside the 0700
-#         runtime dir and relabeled so zygote reads it exactly like a system lib.
-mount_overlay() {
-  local lower="$1" upper="$2"
-  [ -d "$lower" ] || return 0
-  ls "$upper/"* >/dev/null 2>&1 || return 0
-  local work="${upper}.w"
-  mkdir -p "$upper" "$work" 2>/dev/null || return 0
+# INFO: The monitor mounts the /system/lib{,64} overlays itself (transient
+#         scaffold: mounted before zygote, unmounted once every loader has
+#         consumed it - see loader/src/ptracer/overlay_mount.c). Staging only
+#         finalizes perms, labels, and the overlayfs workdirs so zygote reads
+#         the uppers exactly like system libs. No mount happens in the shell
+#         anymore, so /proc/mounts never shows an overlay in the app-visible
+#         namespace after boot settles.
+for bits in lib64 lib; do
+  upper="$TMP_PATH/ovl/$bits"
+  [ -d "$upper" ] || continue
   chmod 644 "$upper/"* 2>/dev/null || true
   chcon u:object_r:system_lib_file:s0 "$upper/"* 2>/dev/null || true
-  if ! grep -q " $lower overlay " /proc/mounts 2>/dev/null; then
-    mount -t overlay overlay -o "lowerdir=$lower,upperdir=$upper,workdir=$work" "$lower" 2>/dev/null || true
-  fi
-}
-mount_overlay /system/lib64 "$TMP_PATH/ovl/lib64"
-mount_overlay /system/lib "$TMP_PATH/ovl/lib"
+  mkdir -p "$upper.w" 2>/dev/null || true
+done
 
 # INFO: Utilize the one with the biggest output, as some devices with Tango have the full list
 #         in ro.product.cpu.abilist but others only have a subset there, and the full list in

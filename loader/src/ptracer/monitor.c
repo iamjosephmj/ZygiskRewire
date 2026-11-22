@@ -16,6 +16,7 @@
 #include "utils.h"
 
 #include "monitor.h"
+#include "overlay_mount.h"
 
 #ifndef SOCKET_NAME
 #error "SOCKET_NAME must come from IDENTITY_CFLAGS"
@@ -280,7 +281,19 @@ void daemon_listener_callback() {
         struct daemon_status *status = msg->cmd == ZYGOTE64_INJECTED ? &status64 : &status32;
         status->zygote_injected = true;
 
+        /* INFO: A fresh zygote instance has to consume the overlay again;
+                   this also arms the degrade timer for the restart cycle. */
+        overlay_notify_injected(msg->cmd == ZYGOTE64_INJECTED);
+
         update_status(NULL);
+
+        break;
+      }
+      case OVERLAY64_CONSUMED:
+      case OVERLAY32_CONSUMED: {
+        LOGD("Received overlay consumed from %s loader", msg->cmd == OVERLAY64_CONSUMED ? "64" : "32");
+
+        overlay_notify_consumed(msg->cmd == OVERLAY64_CONSUMED);
 
         break;
       }
@@ -581,6 +594,9 @@ static bool ensure_daemon_created(bool is_64bit) {
                                                                       \
       break;                                                          \
     }                                                                 \
+                                                                      \
+                                                                      \
+    overlay_mount_all();                                              \
   }
 
 #define PRE_INJECT_TANGO                                           \
@@ -608,6 +624,8 @@ static bool ensure_daemon_created(bool is_64bit) {
                                                                    \
       break;                                                       \
     }                                                              \
+                                                                     \
+    overlay_mount_all();                                     \
   }
 
 int sigchld_signal_fd;
@@ -1080,6 +1098,15 @@ void init_monitor() {
   fd_tracer[0] = open_bin(PTRACER_BIN "32", false);
 
   monitor_events_init();
+
+  /* INFO: Mount the transient overlay scaffold before any zygote can start.
+             Non-fatal on failure: loaders fall back to module-dir paths. */
+  overlay_mount_all();
+
+  int overlay_timer_fd = overlay_timer_create();
+  if (overlay_timer_fd != -1) {
+    monitor_events_register_event(overlay_timer_fired, overlay_timer_fd, EPOLLIN | EPOLLET);
+  }
 
   if (!daemon_listener_init()) {
     LOGE("failed to create socket");

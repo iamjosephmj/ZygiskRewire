@@ -991,6 +991,12 @@ static bool load_modules_only(void) {
 
   free_modules(&ms);
 
+  /* INFO: Every overlay path this zygote will ever use was dlopened above;
+             tell the daemon so the monitor can tear the scaffold down before
+             the first app forks. Fire-and-forget: a lost ack only means the
+             overlay stays mounted until the monitor's degrade timeout. */
+  daemon_overlay_consumed();
+
   return true;
 }
 

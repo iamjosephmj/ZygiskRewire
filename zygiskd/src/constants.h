@@ -9,6 +9,7 @@
 #define ZYGOTE_INJECTED LP_SELECT(5, 4)
 #define DAEMON_SET_INFO LP_SELECT(7, 6)
 #define DAEMON_SET_ERROR_INFO LP_SELECT(9, 8)
+#define OVERLAY_CONSUMED LP_SELECT(11, 10)
 
 enum DaemonSocketAction {
   ZygoteInjected         = 0,
@@ -19,7 +20,8 @@ enum DaemonSocketAction {
   GetModuleDir           = 5,
   ZygoteRestart          = 6,
   UpdateMountNamespace   = 7,
-  RemoveModule           = 8
+  RemoveModule           = 8,
+  OverlayConsumed        = 9
 };
 
 enum ProcessFlags: uint32_t {
